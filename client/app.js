@@ -13,8 +13,14 @@ let shownPoolRoomId = null;
 let lastAnimatedEvent = 0;
 const byId = (id) => document.getElementById(id);
 
-byId("server-url").value = localStorage.getItem("coutecServerUrl") || location.origin;
-byId("connect-button").addEventListener("click", connect);
+const configuredOnlineUrl = window.COUTEC_CONFIG?.onlineServerUrl ?? "";
+byId("server-url").value = localStorage.getItem("coutecOnlineServerUrl") || configuredOnlineUrl;
+byId("offline-connect-button").addEventListener("click", () =>
+  connect("http://localhost:3000", "local"),
+);
+byId("online-connect-button").addEventListener("click", () =>
+  connect(byId("server-url").value, "online"),
+);
 byId("create-form").addEventListener("submit", createRoom);
 byId("join-form").addEventListener("submit", joinRoom);
 byId("start-button").addEventListener("click", () => emit("room:start", {}));
@@ -48,24 +54,48 @@ byId("copy-code").addEventListener("click", async () => {
   showMessage("Código copiado.");
 });
 
-async function connect() {
-  const serverUrl = byId("server-url").value.trim().replace(/\/$/, "");
-  if (!serverUrl) return showError("Informe a URL do servidor.");
-  localStorage.setItem("coutecServerUrl", serverUrl);
+async function connect(rawServerUrl, mode) {
+  const serverUrl = rawServerUrl.trim().replace(/\/$/, "");
+  if (!serverUrl) return showError("Informe a URL do servidor online.");
+  if (mode === "online") localStorage.setItem("coutecOnlineServerUrl", serverUrl);
+  byId("connection-status").textContent = mode === "local"
+    ? "Conectando ao servidor local…"
+    : "Conectando ao servidor online…";
   try {
     await loadSocketClient(`${serverUrl}/socket.io/socket.io.js`);
+    socket?.disconnect();
     socket = window.io(serverUrl);
     socket.on("connect", () => {
       byId("connection-status").textContent = "Conectado";
       byId("connection-status").classList.add("connected");
-      showOnly("home-view");
+      const savedSession = readSavedSession();
+      if (savedSession) {
+        socket.emit("room:resume", savedSession, (response) => {
+          if (!response?.ok) {
+            sessionStorage.removeItem("coutecSession");
+            room = null;
+            showOnly("home-view");
+            showError("A sala anterior não existe mais. Entre em uma nova sala.");
+          }
+        });
+      } else {
+        showOnly("home-view");
+      }
     });
     socket.on("connect_error", () => showError("Não foi possível conectar."));
     socket.on("disconnect", () => {
       byId("connection-status").textContent = "Desconectado";
       byId("connection-status").classList.remove("connected");
     });
-    socket.on("room:state", (nextRoom) => { room = nextRoom; render(); });
+    socket.on("room:state", (nextRoom) => {
+      room = nextRoom;
+      try {
+        render();
+      } catch (error) {
+        console.error("Falha ao renderizar a mesa", error);
+        showError("A mesa recebeu um estado incompatível. Atualize a página e entre novamente na sala.");
+      }
+    });
   } catch (_error) {
     showError("Não foi possível carregar o Socket.IO desse servidor.");
   }
@@ -85,20 +115,37 @@ function createRoom(event) {
       bannedCharacters: String(data.get("bannedCharacters") || "")
         .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean),
     },
-  });
+  }, saveSession);
 }
 
 function joinRoom(event) {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
-  emit("room:join", { playerName: data.get("playerName"), roomId: data.get("roomId") });
+  emit("room:join", { playerName: data.get("playerName"), roomId: data.get("roomId") }, saveSession);
 }
 
-function emit(eventName, payload) {
+function emit(eventName, payload, onSuccess) {
   if (!socket?.connected) return showError("Servidor desconectado.");
   socket.emit(eventName, payload, (response) => {
     if (!response?.ok) showError(response?.error?.message ?? "A ação falhou.");
+    else onSuccess?.(response);
   });
+}
+
+function saveSession(response) {
+  sessionStorage.setItem("coutecSession", JSON.stringify({
+    roomId: response.roomId,
+    playerId: response.playerId,
+  }));
+}
+
+function readSavedSession() {
+  try {
+    return JSON.parse(sessionStorage.getItem("coutecSession"));
+  } catch (_error) {
+    sessionStorage.removeItem("coutecSession");
+    return null;
+  }
 }
 
 function render() {
@@ -125,6 +172,9 @@ function renderGame() {
   showOnly("game-view");
   const { game } = room;
   const self = game.players.find((player) => player.id === room.selfPlayerId);
+  if (!self) {
+    throw new Error(`Jogador local ${room.selfPlayerId} ausente do estado da partida`);
+  }
   const current = game.players.find((player) => player.id === game.currentPlayerId);
   const isOwnTurn = game.currentPlayerId === room.selfPlayerId;
   byId("game-room-code").textContent = room.id;
@@ -158,7 +208,7 @@ function renderOpponents(game) {
   byId("table-players").innerHTML = opponents.map((player, index) => {
     const position = opponentPosition(index, opponents.length);
     const backs = Array.from({ length: player.handSize }, (_, cardIndex) =>
-      `<i class="card-back" style="--rotation:${(cardIndex - .5) * 12}deg"></i>`,
+      `<i class="card-back" style="--rotation:${(cardIndex - (player.handSize - 1) / 2) * 11}deg"><span>COUTEC</span></i>`,
     ).join("");
     const effects = effectBadges(game, player);
     const repository = player.repositoryCoins > 0
@@ -167,11 +217,9 @@ function renderOpponents(game) {
     return `<article data-player-id="${player.id}" class="player-tile ${player.id === game.currentPlayerId ? "current" : ""} ${player.eliminated ? "eliminated" : ""}"
       style="--x:${position.x}%;--y:${position.y}%">
       <div class="effect-badges">${effects}</div>
-      <div class="player-avatar">${initials(player.name)}</div>
-      <strong>${escapeHtml(player.name)}</strong>
-      <div class="player-stats"><span>● ${player.coins}</span><span>▣ ${player.handSize}</span></div>
-      ${repository}
       <div class="card-backs">${backs}</div>
+      <div class="player-info"><div class="player-avatar">${initials(player.name)}</div><div><strong>${escapeHtml(player.name)}</strong>
+      <div class="player-stats"><span>● ${player.coins}</span><span>▣ ${player.handSize}</span></div>${repository}</div></div>
     </article>`;
   }).join("");
 }
@@ -188,8 +236,11 @@ function renderControls(game, self, isOwnTurn) {
   byId("effect-choice-actions").hidden = !effectChoice;
 
   const targets = game.players.filter((player) => player.id !== room.selfPlayerId && !player.eliminated);
-  const implemented = game.characters.filter(({ implemented }) => implemented).map(({ id }) => id);
-  fillCharacterSelect(byId("claim-character"), implemented);
+  const characterDetails = Array.isArray(game.characters)
+    ? game.characters
+    : game.characterPool.map((id) => ({ id, name: characterName(id), implemented: false }));
+  const implemented = characterDetails.filter(({ implemented }) => implemented).map(({ id }) => id);
+  fillClaimCharacterSelect(byId("claim-character"), characterDetails);
   fillCharacterSelect(byId("coup-character"), game.characterPool);
   byId("coup-target").innerHTML = targets.map((player) =>
     `<option value="${player.id}">${escapeHtml(player.name)}</option>`,
@@ -248,6 +299,12 @@ function renderCharacterParameters() {
     container.innerHTML = `<div class="action-row"><label>Primeiro jogador<select id="swap-target-one">${options}</select></label><label>Segundo jogador<select id="swap-target-two">${options}</select></label></div>`;
     const second = byId("swap-target-two");
     if (second.options.length > 1) second.selectedIndex = 1;
+  } else if (characterId === "rodrigo") {
+    const options = activePlayers.filter(({ id }) => id !== room.selfPlayerId).map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("");
+    container.innerHTML = `<label>Quem recebe o empréstimo<select id="effect-target">${options}</select></label>`;
+  } else if (characterId === "marcelo-moreira") {
+    const options = activePlayers.filter(({ id }) => id !== room.selfPlayerId).map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("");
+    container.innerHTML = `<div class="action-row"><label>Alvo<select id="effect-target">${options}</select></label><label>Condição<select id="requirement-comparison"><option value="gte">Maior ou igual</option><option value="lte">Menor ou igual</option></select></label></div><label>Número de moedas<input id="requirement-threshold" type="number" min="1" max="8" value="4"></label>`;
   } else {
     container.innerHTML = "";
   }
@@ -258,6 +315,8 @@ function readCharacterParameters() {
   if (characterId === "jeff-dino") return { targetPlayerId: byId("effect-target").value };
   if (characterId === "deivison") return { mode: byId("repository-mode").value, amount: Number(byId("repository-amount").value) };
   if (characterId === "luis-sapeca") return { targetPlayerIds: [byId("swap-target-one").value, byId("swap-target-two").value] };
+  if (characterId === "rodrigo") return { targetPlayerId: byId("effect-target").value };
+  if (characterId === "marcelo-moreira") return { targetPlayerId: byId("effect-target").value, comparison: byId("requirement-comparison").value, threshold: Number(byId("requirement-threshold").value) };
   return {};
 }
 
@@ -272,18 +331,19 @@ function updateClaimButton() {
 function renderEffectChoice(game, pending) {
   byId("action-title").textContent = "Complete a habilidade";
   const container = byId("effect-choice-actions");
-  if (pending.actorPlayerId !== room.selfPlayerId) {
+  const choicePlayerId = pending.type === "marcelo-loss" ? pending.targetPlayerId : pending.actorPlayerId;
+  if (choicePlayerId !== room.selfPlayerId) {
     byId("action-prompt").textContent = "Aguardando o jogador consultar o baralho.";
     container.innerHTML = "";
     return;
   }
   byId("action-prompt").textContent = "Somente você pode ver as cartas disponíveis.";
-  const deckOptions = game.effectChoiceOptions.deckCards.map((card) =>
+  const deckOptions = (game.effectChoiceOptions?.deckCards ?? []).map((card) =>
     `<option value="${card.instanceId}">${characterName(card.characterId)}</option>`,
   ).join("");
   if (pending.type === "sandra") {
     container.innerHTML = `<label>Sua carta<select id="choice-own-card">${game.ownHand.map((card, index) => `<option value="${card.instanceId}">Carta ${index + 1} — ${characterName(card.characterId)}</option>`).join("")}</select></label><label>Nova carta do baralho<select id="choice-deck-card">${deckOptions}</select></label><button id="complete-effect">Trocar carta</button>`;
-  } else {
+  } else if (pending.type === "altimar") {
     const targets = game.players.filter(({ eliminated }) => !eliminated);
     container.innerHTML = `<label>Alvo<select id="choice-target">${targets.map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("")}</select></label><label>Posição escondida<select id="choice-target-index"></select></label><label>Nova carta<select id="choice-deck-card">${deckOptions}</select></label><button id="complete-effect">Rasgar e substituir</button>`;
     const updateIndexes = () => {
@@ -292,12 +352,23 @@ function renderEffectChoice(game, pending) {
     };
     byId("choice-target").addEventListener("change", updateIndexes);
     updateIndexes();
+  } else if (pending.type === "rodrigo-loss") {
+    const target = game.players.find(({ id }) => id === pending.targetPlayerId);
+    container.innerHTML = `<p>${escapeHtml(target.name)} não pagou a dívida. Escolha uma carta escondida:</p><label>Posição<select id="choice-target-index">${Array.from({ length: target.handSize }, (_, index) => `<option value="${index}">Carta ${index + 1}</option>`).join("")}</select></label><button id="complete-effect">Rasgar carta</button>`;
+  } else {
+    container.innerHTML = `<p>Você não possui 2 moedas. Escolha uma influência para perder:</p><div class="loss-card-buttons">${game.ownHand.map((card) => `<button data-own-instance="${card.instanceId}">${characterName(card.characterId)}</button>`).join("")}</div>`;
+    for (const button of container.querySelectorAll("[data-own-instance]")) {
+      button.addEventListener("click", () => emit("effect:choose", { ownInstanceId: button.dataset.ownInstance }));
+    }
+    return;
   }
   byId("complete-effect").addEventListener("click", () => {
     const payload = { deckInstanceId: byId("choice-deck-card").value };
     if (pending.type === "sandra") payload.ownInstanceId = byId("choice-own-card").value;
-    else {
+    else if (pending.type === "altimar") {
       payload.targetPlayerId = byId("choice-target").value;
+      payload.targetCardIndex = Number(byId("choice-target-index").value);
+    } else {
       payload.targetCardIndex = Number(byId("choice-target-index").value);
     }
     emit("effect:choose", payload);
@@ -305,7 +376,10 @@ function renderEffectChoice(game, pending) {
 }
 
 function renderPool(game) {
-  byId("pool-cards").innerHTML = game.characters.map((character) => `
+  const characters = Array.isArray(game.characters)
+    ? game.characters
+    : game.characterPool.map((id) => ({ id, name: characterName(id), effect: "Reinicie o servidor para carregar a descrição.", cost: { type: "none" }, implemented: false }));
+  byId("pool-cards").innerHTML = characters.map((character) => `
     <article class="pool-character ${character.implemented ? "implemented" : "pending"}">
       <span class="character-monogram">${character.name.charAt(0)}</span>
       <div><h3>${escapeHtml(character.name)}</h3><small>${costLabel(character.cost)}</small><p>${escapeHtml(character.effect)}</p>
@@ -327,6 +401,8 @@ function effectBadges(game, player) {
     if (effect.type === "dinosaur") return '<span class="dinosaur-effect" title="Dinossaurinho: come 1 moeda de cada ganho">🦖</span>';
     if (effect.type === "cave") return '<span class="cave-effect" title="Moedas protegidas">⛰</span>';
     if (effect.type === "ademar") return '<span class="ademar-effect" title="Ademar está observando quem não ganha moedas">👀</span>';
+    if (effect.type === "rodrigo-debt") return `<span class="ademar-effect" title="Dívida: ${effect.amountDue} moedas">💸</span>`;
+    if (effect.type === "marcelo-requirement") return `<span class="ademar-effect" title="Requisito ${effect.comparison === "gte" ? "≥" : "≤"} ${effect.threshold}">📋</span>`;
     return "";
   }).join("");
 }
@@ -378,6 +454,14 @@ function describeEvent(event, players) {
   if (event.type === "hands-swapped") return `${playerName(event.targetPlayerIds[0])} e ${playerName(event.targetPlayerIds[1])} trocaram suas mãos.`;
   if (event.type === "sandra-exchanged") return `${playerName(event.playerId)} trocou uma carta com o baralho.`;
   if (event.type === "altimar-replaced") return `${playerName(event.playerId)} rasgou uma carta de ${playerName(event.targetPlayerId)}.`;
+  if (event.type === "rodrigo-loan-created") return `${playerName(event.playerId)} emprestou 2 moedas para ${playerName(event.targetPlayerId)}.`;
+  if (event.type === "rodrigo-debt-paid") return `${playerName(event.targetPlayerId)} pagou ${event.amount} moedas para ${playerName(event.playerId)}.`;
+  if (event.type === "rodrigo-debt-escalated") return `A dívida de ${playerName(event.targetPlayerId)} subiu para 8 moedas.`;
+  if (event.type === "rodrigo-defaulted") return `${playerName(event.targetPlayerId)} não pagou a dívida final.`;
+  if (event.type === "marcelo-requirement-created") return `${playerName(event.playerId)} exigiu que ${playerName(event.targetPlayerId)} fique ${event.comparison === "gte" ? "com pelo menos" : "com no máximo"} ${event.threshold} moedas.`;
+  if (event.type === "marcelo-requirement-met") return `${playerName(event.targetPlayerId)} cumpriu o requisito.`;
+  if (event.type === "marcelo-coin-penalty") return `${playerName(event.targetPlayerId)} perdeu 2 moedas por não cumprir o requisito.`;
+  if (event.type === "marcelo-card-penalty") return `${playerName(event.targetPlayerId)} deverá perder uma carta.`;
   return escapeHtml(event.type);
 }
 
@@ -388,6 +472,18 @@ function opponentPosition(index, count) {
 }
 function fillCharacterSelect(select, ids) {
   select.innerHTML = ids.map((id) => `<option value="${id}">${characterName(id)}</option>`).join("");
+}
+function fillClaimCharacterSelect(select, characters) {
+  const previous = select.value;
+  select.innerHTML = characters.map((character) =>
+    `<option value="${character.id}" ${character.implemented ? "" : "disabled"}>${escapeHtml(character.name)}${character.implemented ? "" : " — em desenvolvimento"}</option>`,
+  ).join("");
+  const previousOption = [...select.options].find(({ value }) => value === previous);
+  if (previousOption && !previousOption.disabled) select.value = previous;
+  else {
+    const firstEnabled = [...select.options].find((option) => !option.disabled);
+    if (firstEnabled) select.value = firstEnabled.value;
+  }
 }
 function showOnly(viewId) {
   for (const id of ["connection-view", "home-view", "lobby-view", "game-view"]) byId(id).hidden = id !== viewId;

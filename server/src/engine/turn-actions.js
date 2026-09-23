@@ -155,7 +155,7 @@ function requireCoupIsNotMandatory(player) {
 }
 
 function requireNoPendingClaim(state) {
-  if (state.pendingClaim) {
+  if (state.pendingClaim || state.pendingEffectChoice) {
     throw new GameRuleError(
       "Resolva a alegação pendente antes de fazer outra ação.",
       "CLAIM_ALREADY_PENDING",

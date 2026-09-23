@@ -106,6 +106,20 @@ test("três jogadores recebem estado sincronizado sem vazamento de mãos", async
   });
   const resolvedStates = await Promise.all(statePromises);
   assert.equal(resolvedStates[0].game.pendingClaim, null);
+
+  const resumedPlayerId = resolvedStates[0].selfPlayerId;
+  clients[0].close();
+  const resumedClient = createClient(`http://127.0.0.1:${port}`);
+  clients.push(resumedClient);
+  await waitForConnection(resumedClient);
+  const resumedStatePromise = waitForState(resumedClient);
+  await emit(resumedClient, "room:resume", {
+    roomId: created.roomId,
+    playerId: resumedPlayerId,
+  });
+  const resumedState = await resumedStatePromise;
+  assert.equal(resumedState.selfPlayerId, resumedPlayerId);
+  assert.ok(resumedState.game.ownHand.length >= 1);
 });
 
 function waitForConnection(client) {

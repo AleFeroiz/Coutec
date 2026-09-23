@@ -46,8 +46,8 @@ Implementado:
 - cliente mínimo para playtests locais.
 - janela de desafio configurável (padrão de 5 segundos), com votos antecipados;
 - cobrança da habilidade no momento do anúncio;
-- Jeff Dino, Silvério, Deivison, Paula Granada, Ademar, Sandra, Altimar e
-  Luis Sapeca jogáveis;
+- Jeff Dino, Silvério, Deivison, Paula Granada, Ademar, Sandra, Altimar,
+  Luis Sapeca, Rodrigo e Marcelo Moreira jogáveis;
 - expiração de efeitos no começo do próximo turno de quem os criou.
 
 Ainda não implementado:

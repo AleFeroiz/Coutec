@@ -18,9 +18,32 @@
       <div id="message" class="message" hidden></div>
 
       <section id="connection-view" class="panel">
-        <h2>Conectar ao servidor</h2>
-        <label>URL do servidor <input id="server-url" type="url" placeholder="http://localhost:3000" /></label>
-        <button id="connect-button">Conectar</button>
+        <div class="connection-heading">
+          <p class="eyebrow">Como você quer jogar?</p>
+          <h2>Escolha uma conexão</h2>
+          <p class="muted">As duas opções usam as mesmas regras e salas multiplayer.</p>
+        </div>
+        <div class="connection-options">
+          <article class="connection-choice local-choice">
+            <span class="connection-icon" aria-hidden="true">🏠</span>
+            <div>
+              <h3>Offline / local</h3>
+              <p>Jogue sem internet nesta máquina. Antes, inicie o servidor do COUTEC com <code>npm start</code>.</p>
+            </div>
+            <button id="offline-connect-button">Jogar localmente</button>
+          </article>
+          <article class="connection-choice online-choice">
+            <span class="connection-icon" aria-hidden="true">🌐</span>
+            <div>
+              <h3>Online</h3>
+              <p>Conecte ao motor publicado na Render para jogar pela internet.</p>
+            </div>
+            <label>Servidor online
+              <input id="server-url" type="url" placeholder="https://seu-servidor.onrender.com" />
+            </label>
+            <button id="online-connect-button">Jogar online</button>
+          </article>
+        </div>
       </section>
 
       <section id="home-view" class="grid two-columns" hidden>
@@ -77,7 +100,7 @@
                   <button id="claim-button">Alegar habilidade</button>
                 </div>
                 <div id="character-parameters"></div>
-                <p class="prototype-note">Playtest do desafio: custos e efeitos específicos da habilidade ainda não são aplicados.</p>
+                <p class="prototype-note">Escolha uma habilidade disponível no pool da partida.</p>
                 <div class="coup-controls">
                   <label>Alvo <select id="coup-target"></select></label>
                   <label>Palpite <select id="coup-character"></select></label>
@@ -123,6 +146,7 @@
         <div id="pool-cards" class="pool-cards"></div>
       </dialog>
     </main>
+    <script src="./config.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

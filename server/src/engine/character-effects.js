@@ -6,6 +6,7 @@ const { GameRuleError } = require("./errors");
 const IMPLEMENTED_CHARACTERS = new Set([
   "jeff-dino", "silverio", "deivison", "paula-granada", "ademar",
   "sandra", "altimar", "luis-sapeca",
+  "rodrigo", "marcelo-moreira",
 ]);
 
 function prepareCharacterAction(state, { playerId, characterId, parameters = {} }) {
@@ -25,8 +26,8 @@ function prepareCharacterAction(state, { playerId, characterId, parameters = {} 
     );
   }
   validateParameters(state, player, characterId, parameters);
-  const announcedCost = characterId === "paula-granada"
-    ? 7
+  const announcedCost = characterId === "paula-granada" ? 7
+    : characterId === "rodrigo" ? 2
     : character.cost.type === "coins" ? character.cost.amount : 0;
   if (player.coins < announcedCost) {
     throw new GameRuleError(
@@ -35,6 +36,10 @@ function prepareCharacterAction(state, { playerId, characterId, parameters = {} 
     );
   }
   player.coins -= announcedCost;
+  if (characterId === "rodrigo") {
+    const target = getActivePlayer(state, parameters.targetPlayerId);
+    grantCoins(state, target, 2, "rodrigo-loan");
+  }
   return { announcedCost, effectImplemented, parameters: { ...parameters } };
 }
 
@@ -112,6 +117,36 @@ function executeCharacterEffect(state, claim) {
       characterId,
     });
     return false;
+  } else if (characterId === "rodrigo") {
+    addEffect(state, {
+      type: "rodrigo-debt",
+      sourcePlayerId: player.id,
+      targetPlayerId: parameters.targetPlayerId,
+      nextCheckAtStartOfPlayerId: player.id,
+      amountDue: 4,
+      failedChecks: 0,
+    });
+    record(state, {
+      type: "rodrigo-loan-created",
+      playerId: player.id,
+      targetPlayerId: parameters.targetPlayerId,
+    });
+  } else if (characterId === "marcelo-moreira") {
+    addEffect(state, {
+      type: "marcelo-requirement",
+      sourcePlayerId: player.id,
+      targetPlayerId: parameters.targetPlayerId,
+      nextCheckAtStartOfPlayerId: player.id,
+      threshold: parameters.threshold,
+      comparison: parameters.comparison,
+    });
+    record(state, {
+      type: "marcelo-requirement-created",
+      playerId: player.id,
+      targetPlayerId: parameters.targetPlayerId,
+      threshold: parameters.threshold,
+      comparison: parameters.comparison,
+    });
   }
   return true;
 }
@@ -137,6 +172,7 @@ function grantCoins(state, player, amount, reason) {
 }
 
 function expireEffectsForTurnStart(state, playerId) {
+  processScheduledEffects(state, playerId);
   const expired = state.activeEffects.filter(
     ({ expiresAtStartOfPlayerId }) => expiresAtStartOfPlayerId === playerId,
   );
@@ -218,11 +254,31 @@ function validateParameters(state, player, characterId, parameters) {
     }
     for (const targetId of parameters.targetPlayerIds) getActivePlayer(state, targetId);
   }
+  if (["rodrigo", "marcelo-moreira"].includes(characterId)) {
+    const target = getActivePlayer(state, parameters.targetPlayerId);
+    if (target.id === player.id) {
+      throw new GameRuleError("Escolha outro jogador.", "SELF_TARGETED_EFFECT");
+    }
+  }
+  if (characterId === "rodrigo" && player.coins < 2) {
+    throw new GameRuleError("Rodrigo exige 2 moedas para emprestar.", "NOT_ENOUGH_COINS_FOR_LOAN");
+  }
+  if (characterId === "marcelo-moreira") {
+    if (!Number.isInteger(parameters.threshold) || parameters.threshold < 1 || parameters.threshold > 8) {
+      throw new GameRuleError("O requisito deve ficar entre 1 e 8.", "INVALID_REQUIREMENT_THRESHOLD");
+    }
+    if (!["gte", "lte"].includes(parameters.comparison)) {
+      throw new GameRuleError("Escolha maior/igual ou menor/igual.", "INVALID_REQUIREMENT_COMPARISON");
+    }
+  }
 }
 
 function applyCharacterChoice(state, { playerId, choice }) {
   const pending = state.pendingEffectChoice;
-  if (!pending || pending.actorPlayerId !== playerId) {
+  const choicePlayerId = pending?.type === "marcelo-loss"
+    ? pending.targetPlayerId
+    : pending?.actorPlayerId;
+  if (!pending || choicePlayerId !== playerId) {
     throw new GameRuleError("Não há uma escolha disponível para você.", "NO_EFFECT_CHOICE");
   }
   const actor = getActivePlayer(state, playerId);
@@ -234,7 +290,7 @@ function applyCharacterChoice(state, { playerId, choice }) {
     const [returned] = actor.hand.splice(ownIndex, 1, selectedCard);
     state.deck.returnAndShuffle([returned]);
     record(state, { type: "sandra-exchanged", playerId });
-  } else {
+  } else if (pending.type === "altimar") {
     const target = getActivePlayer(state, choice.targetPlayerId);
     if (!Number.isInteger(choice.targetCardIndex) || choice.targetCardIndex < 0 || choice.targetCardIndex >= target.hand.length) {
       throw new GameRuleError("Escolha uma posição válida da mão do alvo.", "INVALID_TARGET_CARD_INDEX");
@@ -256,8 +312,92 @@ function applyCharacterChoice(state, { playerId, choice }) {
       targetPlayerId: target.id,
       lostCharacterId: tornCard.characterId,
     });
+  } else if (pending.type === "rodrigo-loss") {
+    if (playerId !== pending.actorPlayerId) throw new GameRuleError("Somente o credor escolhe a carta.", "ONLY_EFFECT_OWNER_CHOOSES");
+    loseCardByIndex(state, pending.targetPlayerId, choice.targetCardIndex, "rodrigo-default");
+  } else if (pending.type === "marcelo-loss") {
+    if (playerId !== pending.targetPlayerId) throw new GameRuleError("O alvo escolhe a própria perda.", "ONLY_LOSER_CHOOSES_CARD");
+    const target = getActivePlayer(state, playerId);
+    const index = target.hand.findIndex(({ instanceId }) => instanceId === choice.ownInstanceId);
+    if (index === -1) throw new GameRuleError("Escolha uma carta da sua mão.", "CARD_NOT_OWNED_BY_PLAYER");
+    loseCardByIndex(state, target.id, index, "marcelo-penalty");
   }
   state.pendingEffectChoice = null;
+  return { finishTurn: ["sandra", "altimar"].includes(pending.type) };
+}
+
+function processScheduledEffects(state, playerId) {
+  for (const effect of [...state.activeEffects]) {
+    if (state.pendingEffectChoice) break;
+    if (effect.nextCheckAtStartOfPlayerId !== playerId) continue;
+    if (effect.type === "rodrigo-debt") processRodrigoDebt(state, effect);
+    if (effect.type === "marcelo-requirement") processMarceloRequirement(state, effect);
+  }
+}
+
+function processRodrigoDebt(state, effect) {
+  const owner = state.players.find(({ id }) => id === effect.sourcePlayerId);
+  const target = state.players.find(({ id }) => id === effect.targetPlayerId);
+  if (!owner || owner.eliminated || !target || target.eliminated) return removeEffect(state, effect.id);
+  if (target.coins >= effect.amountDue && !hasCaveProtection(state, target.id)) {
+    target.coins -= effect.amountDue;
+    grantCoins(state, owner, effect.amountDue, "rodrigo-payment");
+    record(state, { type: "rodrigo-debt-paid", playerId: owner.id, targetPlayerId: target.id, amount: effect.amountDue });
+    return removeEffect(state, effect.id);
+  }
+  if (effect.failedChecks === 0) {
+    effect.failedChecks = 1;
+    effect.amountDue = 8;
+    record(state, { type: "rodrigo-debt-escalated", playerId: owner.id, targetPlayerId: target.id });
+    return;
+  }
+  removeEffect(state, effect.id);
+  state.pendingEffectChoice = { type: "rodrigo-loss", actorPlayerId: owner.id, targetPlayerId: target.id };
+  record(state, { type: "rodrigo-defaulted", playerId: owner.id, targetPlayerId: target.id });
+}
+
+function processMarceloRequirement(state, effect) {
+  const owner = state.players.find(({ id }) => id === effect.sourcePlayerId);
+  const target = state.players.find(({ id }) => id === effect.targetPlayerId);
+  if (!owner || owner.eliminated || !target || target.eliminated) return removeEffect(state, effect.id);
+  const met = effect.comparison === "gte"
+    ? target.coins >= effect.threshold
+    : target.coins <= effect.threshold;
+  if (met) {
+    record(state, { type: "marcelo-requirement-met", playerId: owner.id, targetPlayerId: target.id });
+    return removeEffect(state, effect.id);
+  }
+  if (hasCaveProtection(state, target.id)) {
+    record(state, { type: "marcelo-blocked-by-cave", targetPlayerId: target.id });
+    return;
+  }
+  if (target.coins >= 2) {
+    target.coins -= 2;
+    record(state, { type: "marcelo-coin-penalty", playerId: owner.id, targetPlayerId: target.id, amount: 2 });
+    return;
+  }
+  removeEffect(state, effect.id);
+  state.pendingEffectChoice = { type: "marcelo-loss", actorPlayerId: owner.id, targetPlayerId: target.id };
+  record(state, { type: "marcelo-card-penalty", playerId: owner.id, targetPlayerId: target.id });
+}
+
+function loseCardByIndex(state, playerId, index, reason) {
+  const player = getActivePlayer(state, playerId);
+  if (!Number.isInteger(index) || index < 0 || index >= player.hand.length) {
+    throw new GameRuleError("Escolha uma posição válida.", "INVALID_TARGET_CARD_INDEX");
+  }
+  const [card] = player.hand.splice(index, 1);
+  state.revealedCards.push({ sequence: state.revealedCards.length + 1, turnNumber: state.turnNumber, playerId, reason, instanceId: card.instanceId, characterId: card.characterId });
+  state.deck.returnAndShuffle([card]);
+  if (player.hand.length === 0) {
+    player.eliminated = true;
+    cancelEffectsFromSource(state, player.id);
+    record(state, { type: "player-eliminated", playerId });
+  }
+}
+
+function removeEffect(state, effectId) {
+  state.activeEffects = state.activeEffects.filter(({ id }) => id !== effectId);
 }
 
 function applySocialism(state, player) {

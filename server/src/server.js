@@ -28,7 +28,12 @@ function createCoutecServer({
     response.json({ service: "coutec-server", status: "ok" });
   });
   // Conveniência para playtest local; o mesmo /client pode ir para a Vercel.
-  app.use(express.static(path.resolve(__dirname, "../../client")));
+  app.use(express.static(path.resolve(__dirname, "../../client"), {
+    etag: false,
+    setHeaders(response) {
+      response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    },
+  }));
 
   io.on("connection", (socket) => registerSocket(socket, io, roomStore));
   return { app, io, roomStore, server };
@@ -54,6 +59,19 @@ function registerSocket(socket, io, roomStore) {
         socketId: socket.id,
         roomId: payload?.roomId,
         playerName: payload?.playerName,
+      });
+      socket.join(room.id);
+      emitRoom(room);
+      return { roomId: room.id, playerId };
+    });
+  });
+
+  socket.on("room:resume", (payload, reply) => {
+    handle(reply, () => {
+      const { room, playerId } = roomStore.resume({
+        socketId: socket.id,
+        roomId: payload?.roomId,
+        playerId: payload?.playerId,
       });
       socket.join(room.id);
       emitRoom(room);

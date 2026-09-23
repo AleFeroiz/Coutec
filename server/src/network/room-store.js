@@ -51,6 +51,16 @@ class RoomStore {
     return { room, playerId };
   }
 
+  resume({ socketId, roomId, playerId }) {
+    this.requireSocketOutsideRoom(socketId);
+    const room = this.rooms.get(String(roomId ?? "").trim().toUpperCase());
+    if (!room || !room.players.some(({ id }) => id === playerId)) {
+      throw new GameRuleError("A sessão dessa sala expirou.", "SESSION_NOT_FOUND");
+    }
+    this.memberships.set(socketId, { roomId: room.id, playerId });
+    return { room, playerId };
+  }
+
   start(socketId) {
     const { room, playerId } = this.getMembership(socketId);
     startGame(room, { requestingPlayerId: playerId, rng: this.rng });

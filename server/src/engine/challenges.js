@@ -152,9 +152,10 @@ function resolveClaimWithoutChallenge(state) {
 }
 
 function chooseCharacterEffect(state, { playerId, choice }) {
-  applyCharacterChoice(state, { playerId, choice });
+  const result = applyCharacterChoice(state, { playerId, choice });
   assertCardIntegrity(state);
-  finishTurn(state);
+  if (finishGameIfThereIsAWinner(state)) return { completed: true };
+  if (result.finishTurn) finishTurn(state);
   return { completed: true };
 }
 
@@ -170,7 +171,7 @@ function replaceRevealedClaimCard(state, player, card) {
 }
 
 function requireNoPendingClaim(state) {
-  if (state.pendingClaim) {
+  if (state.pendingClaim || state.pendingEffectChoice) {
     throw new GameRuleError(
       "Já existe uma alegação aguardando resolução.",
       "CLAIM_ALREADY_PENDING",

@@ -59,11 +59,22 @@ function serializeRoomForPlayer(room, playerId) {
         ? { ...room.game.pendingEffectChoice }
         : null,
       effectChoiceOptions:
-        room.game.pendingEffectChoice?.actorPlayerId === playerId
-          ? { deckCards: room.game.deck.snapshot() }
+        getChoicePlayerId(room.game.pendingEffectChoice) === playerId
+          ? {
+              deckCards: ["sandra", "altimar"].includes(room.game.pendingEffectChoice.type)
+                ? room.game.deck.snapshot()
+                : [],
+            }
           : null,
     },
   };
+}
+
+function getChoicePlayerId(pending) {
+  if (!pending) return null;
+  return pending.type === "marcelo-loss"
+    ? pending.targetPlayerId
+    : pending.actorPlayerId;
 }
 
 module.exports = { serializeRoomForPlayer };
