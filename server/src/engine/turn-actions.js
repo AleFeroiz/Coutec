@@ -3,23 +3,36 @@
 const { GAME_RULES } = require("../config/game-constants");
 const { GameRuleError } = require("./errors");
 const { assertCardIntegrity } = require("./game-state");
+const {
+  cancelEffectsFromSource,
+  expireEffectsForTurnStart,
+  grantCoins,
+} = require("./character-effects");
 
 function collectCoin(state, playerId) {
   const player = requireCurrentPlayer(state, playerId);
+  requireNoPendingClaim(state);
   requireCoupIsNotMandatory(player);
 
-  player.coins += GAME_RULES.collectCoinsAmount;
+  const gain = grantCoins(
+    state,
+    player,
+    GAME_RULES.collectCoinsAmount,
+    "collect",
+  );
   recordEvent(state, {
     type: "coins-collected",
     playerId,
-    amount: GAME_RULES.collectCoinsAmount,
+    amount: gain.received,
+    eatenByDinosaur: gain.eaten,
   });
   finishTurn(state);
-  return { amount: GAME_RULES.collectCoinsAmount, coins: player.coins };
+  return { amount: gain.received, eatenByDinosaur: gain.eaten, coins: player.coins };
 }
 
 function performCoup(state, { playerId, targetPlayerId, guessedCharacterId }) {
   const player = requireCurrentPlayer(state, playerId);
+  requireNoPendingClaim(state);
   const target = state.players.find(({ id }) => id === targetPlayerId);
 
   if (!target || target.eliminated) {
@@ -110,6 +123,7 @@ function loseInfluence(state, { playerId, instanceId, reason }) {
 
   if (player.hand.length === 0) {
     player.eliminated = true;
+    cancelEffectsFromSource(state, player.id);
     recordEvent(state, { type: "player-eliminated", playerId: player.id });
   }
 
@@ -136,6 +150,15 @@ function requireCoupIsNotMandatory(player) {
     throw new GameRuleError(
       `Com ${GAME_RULES.mandatoryCoupThreshold} ou mais moedas, o Golpe é obrigatório.`,
       "COUP_IS_MANDATORY",
+    );
+  }
+}
+
+function requireNoPendingClaim(state) {
+  if (state.pendingClaim) {
+    throw new GameRuleError(
+      "Resolva a alegação pendente antes de fazer outra ação.",
+      "CLAIM_ALREADY_PENDING",
     );
   }
 }
@@ -172,6 +195,7 @@ function finishTurn(state) {
     if (!state.players[candidateIndex].eliminated) {
       state.currentPlayerIndex = candidateIndex;
       state.turnNumber += 1;
+      expireEffectsForTurnStart(state, state.players[candidateIndex].id);
       return;
     }
   }
@@ -191,6 +215,11 @@ function finishGameIfThereIsAWinner(state) {
 module.exports = {
   collectCoin,
   finishGameIfThereIsAWinner,
+  finishTurn,
   loseInfluence,
   performCoup,
+  recordEvent,
+  recordRevealedCards,
+  requireCoupIsNotMandatory,
+  requireCurrentPlayer,
 };

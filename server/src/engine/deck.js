@@ -42,6 +42,17 @@ class Deck {
     return this.shuffle();
   }
 
+  takeByInstanceId(instanceId) {
+    const index = this.cards.findIndex((card) => card.instanceId === instanceId);
+    if (index === -1) {
+      throw new GameRuleError(
+        "A carta escolhida não está mais no baralho.",
+        "CARD_NOT_IN_DECK",
+      );
+    }
+    return this.cards.splice(index, 1)[0];
+  }
+
   snapshot() {
     return this.cards.map((card) => ({ ...card }));
   }

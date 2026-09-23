@@ -36,6 +36,7 @@ test("a configuração padrão preserva o pool e começa com 0 moedas", () => {
   assert.equal(config.poolMode, "random");
   assert.deepEqual(config.bannedCharacters, []);
   assert.equal(config.initialCoins, 0);
+  assert.equal(config.challengeSeconds, 5);
 });
 
 test("o pool aleatório respeita personagens banidos", () => {

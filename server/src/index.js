@@ -1,6 +1,8 @@
 "use strict";
 
 const cards = require("./cards/catalog");
+const challenges = require("./engine/challenges");
+const characterEffects = require("./engine/character-effects");
 const constants = require("./config/game-constants");
 const deck = require("./engine/deck");
 const { GameRuleError } = require("./engine/errors");
@@ -12,6 +14,8 @@ const turnActions = require("./engine/turn-actions");
 
 module.exports = {
   ...cards,
+  ...challenges,
+  ...characterEffects,
   ...constants,
   ...deck,
   ...gameState,

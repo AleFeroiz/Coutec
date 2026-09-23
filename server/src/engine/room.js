@@ -31,7 +31,13 @@ function addPlayer(room, player) {
   if (room.players.some(({ id }) => id === player.id)) {
     throw new GameRuleError("Esse jogador já está na sala.", "DUPLICATE_PLAYER_ID");
   }
-  room.players.push({ id: player.id, name: player.name });
+  if (typeof player.id !== "string" || player.id.trim() === "") {
+    throw new GameRuleError("O jogador precisa de um id.", "INVALID_PLAYER_ID");
+  }
+  if (typeof player.name !== "string" || player.name.trim() === "") {
+    throw new GameRuleError("O jogador precisa de um nome.", "INVALID_PLAYER_NAME");
+  }
+  room.players.push({ id: player.id, name: player.name.trim() });
   return room;
 }
 

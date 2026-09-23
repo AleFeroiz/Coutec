@@ -21,6 +21,7 @@ function createPlayer({ id, name, initialCoins }) {
     name: name.trim(),
     coins: initialCoins,
     repositoryCoins: 0,
+    totalCoinsGained: 0,
     hand: [],
     eliminated: false,
   };

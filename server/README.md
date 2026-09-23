@@ -1,17 +1,20 @@
-# Motor do COUTEC
+# Servidor do COUTEC
 
-Esta pasta contém o motor puro de regras e um servidor HTTP mínimo para o
-serviço permanecer online na Render. Socket.IO será adicionado depois das
-regras isoladas estarem testadas.
+Esta pasta contém o motor de regras e a camada multiplayer Socket.IO. As salas
+ficam em memória nesta versão de playtest.
 
-## Iniciar o serviço
+## Playtest local
 
 ```bash
+npm install
 npm start
 ```
 
-O processo escuta a variável `PORT` fornecida pela hospedagem (ou a porta 3000
-localmente). `GET /` e `GET /health` retornam o estado do serviço.
+Abra `http://localhost:3000` em três abas. Crie uma sala na primeira e use o
+código para entrar nas outras duas.
+
+O processo usa `PORT` (padrão `3000`) e `CLIENT_ORIGIN`, que aceita uma ou mais
+origens do front-end separadas por vírgula.
 
 ## Rodar os testes
 
@@ -37,13 +40,23 @@ Implementado:
 - resolução de Golpe certo e errado, inclusive contra alvo com uma só carta;
 - eliminação, encerramento da partida e definição do vencedor;
 - histórico público permanente de cartas reveladas;
-- verificação de integridade do total de cartas.
+- verificação de integridade do total de cartas;
+- salas multiplayer em memória via Socket.IO;
+- estado privado por jogador, sem enviar mãos adversárias;
+- cliente mínimo para playtests locais.
+- janela de desafio configurável (padrão de 5 segundos), com votos antecipados;
+- cobrança da habilidade no momento do anúncio;
+- Jeff Dino, Silvério, Deivison, Paula Granada, Ademar, Sandra, Altimar e
+  Luis Sapeca jogáveis;
+- expiração de efeitos no começo do próximo turno de quem os criou.
 
 Ainda não implementado:
 
-- ações e desafios das cartas de personagem;
+- efeitos específicos das ações de personagem;
 - efeitos de rodada;
-- rede Socket.IO e front-end.
+- reconexão depois de atualizar ou fechar a página;
+- persistência das salas;
+- front-end completo e acabamento visual final.
 
 ## Decisões pendentes preservadas no código
 
@@ -51,3 +64,7 @@ Ainda não implementado:
   `copiesPerCharacter`; os limites de balanceamento não foram inventados.
 - As habilidades estão descritas e parametrizadas, mas ainda não são
   executadas enquanto suas interações pendentes não forem definidas.
+
+O fluxo geral de desafio já está implementado: primeiro desafio aceito, prova
+com troca da carta, perda escolhida pelo próprio dono, votos de não desafiar,
+cronômetro e cancelamento do blefe.

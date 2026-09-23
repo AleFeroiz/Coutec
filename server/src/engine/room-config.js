@@ -19,6 +19,7 @@ function createRoomConfig(input = {}) {
   requirePositiveInteger(config.poolSize, "poolSize");
   requirePositiveInteger(config.copiesPerCharacter, "copiesPerCharacter");
   requireNonNegativeInteger(config.initialCoins, "initialCoins");
+  requirePositiveInteger(config.challengeSeconds, "challengeSeconds");
 
   if (!POOL_MODES.has(config.poolMode)) {
     throw new GameRuleError(

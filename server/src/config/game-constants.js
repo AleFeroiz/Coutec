@@ -6,6 +6,7 @@ const DEFAULT_ROOM_CONFIG = Object.freeze({
   poolMode: "random",
   bannedCharacters: Object.freeze([]),
   initialCoins: 0,
+  challengeSeconds: 5,
 });
 
 const HAND_SIZE = 2;
