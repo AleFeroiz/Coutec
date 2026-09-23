@@ -1,8 +1,17 @@
 # Motor do COUTEC
 
-Esta pasta contém o motor puro de regras. Ele ainda não abre servidor HTTP nem
-conexões Socket.IO; a camada de rede só será adicionada depois das regras
-isoladas estarem testadas.
+Esta pasta contém o motor puro de regras e um servidor HTTP mínimo para o
+serviço permanecer online na Render. Socket.IO será adicionado depois das
+regras isoladas estarem testadas.
+
+## Iniciar o serviço
+
+```bash
+npm start
+```
+
+O processo escuta a variável `PORT` fornecida pela hospedagem (ou a porta 3000
+localmente). `GET /` e `GET /health` retornam o estado do serviço.
 
 ## Rodar os testes
 
