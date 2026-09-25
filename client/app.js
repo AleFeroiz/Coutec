@@ -1,6 +1,7 @@
 "use strict";
 
 applyRandomAmbientColor();
+installMobileTapBridge();
 
 const CHARACTER_NAMES = {
   "jeff-dino": "Jeff Dino", altimar: "Altimar", silverio: "Silvério",
@@ -214,7 +215,7 @@ function renderGame() {
   byId("winner-text").textContent = game.winnerPlayerId
     ? `${game.players.find((player) => player.id === game.winnerPlayerId)?.name} venceu!`
     : "";
-  byId("own-coins").innerHTML = `${self.repositoryCoins > 0 ? `<span class="repository-cloud">☁ ${self.repositoryCoins}</span>` : ""} ${effectBadges(game, self)}`;
+  byId("own-effects").innerHTML = effectBadges(game, self);
   byId("own-coin-pile").innerHTML = coinPileMarkup(game, self);
   renderOwnHand(game);
   renderOpponents(game);
@@ -245,15 +246,11 @@ function renderOpponents(game) {
       `<i class="card-back" style="--rotation:${(cardIndex - (player.handSize - 1) / 2) * 11}deg"><span>COUTEC</span></i>`,
     ).join("");
     const effects = effectBadges(game, player);
-    const repository = player.repositoryCoins > 0
-      ? `<span class="repository-cloud" title="Moedas no repositório">☁ ${player.repositoryCoins}</span>`
-      : "";
     return `<article data-player-id="${player.id}" class="player-tile ${player.id === game.currentPlayerId ? "current" : ""} ${player.eliminated ? "eliminated" : ""}"
       style="--x:${position.x}%;--y:${position.y}%;--seat-angle:${position.rotation}deg">
       <div class="effect-badges">${effects}</div>
+      <div class="player-nameplate">${escapeHtml(player.name)}</div>
       <div class="opponent-hand-zone"><div class="card-backs">${backs}</div>${coinPileMarkup(game, player)}</div>
-      <div class="player-info"><div class="player-avatar">${initials(player.name)}</div><div><strong>${escapeHtml(player.name)}</strong>
-      <div class="player-stats"><span>▣ ${player.handSize}</span></div>${repository}</div></div>
     </article>`;
   }).join("");
 }
@@ -651,7 +648,32 @@ function coinPileMarkup(game, player) {
   return `<div class="coin-pile ${protectedByCave ? "protected-coins" : ""}" title="${player.coins} moeda(s)${protectedByCave ? " protegidas pela caverna" : ""}">
     <span class="coin-disc coin-one">●</span><span class="coin-disc coin-two">●</span><span class="coin-disc coin-three">●</span>
     <strong>${player.coins}</strong>${protectedByCave ? '<span class="coin-cave" aria-label="Moedas protegidas pela caverna"></span>' : ""}
+    ${player.repositoryCoins > 0 ? `<span class="repository-cloud coin-repository" title="Moedas no repositório">☁ ${player.repositoryCoins}</span>` : ""}
   </div>`;
+}
+
+function installMobileTapBridge() {
+  let start = null;
+  document.addEventListener("touchstart", (event) => {
+    const touch = event.changedTouches[0];
+    if (touch) start = { x: touch.clientX, y: touch.clientY };
+  }, { passive: true, capture: true });
+  document.addEventListener("touchend", (event) => {
+    const touch = event.changedTouches[0];
+    if (!touch || !start) return;
+    const moved = Math.hypot(touch.clientX - start.x, touch.clientY - start.y);
+    start = null;
+    if (moved > 12 || event.target.closest("button")) return;
+    const selector = ".cps-collect,.own-seat .card,.quick-actions button,#pool-button,.action-drawer button";
+    const target = document.elementsFromPoint(touch.clientX, touch.clientY)
+      .map((element) => element.closest?.(selector))
+      .find(Boolean);
+    if (target) {
+      event.preventDefault();
+      target.click();
+    }
+  }, { passive: false, capture: true });
+  document.addEventListener("touchcancel", () => { start = null; }, { passive: true, capture: true });
 }
 
 function updateChallengeTimer() {
