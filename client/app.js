@@ -257,6 +257,8 @@ function renderOwnHand(game) {
 
 function renderOpponents(game) {
   const opponents = game.players.filter((player) => player.id !== room.selfPlayerId);
+  byId("table-players").classList.toggle("dense-seats", opponents.length > 4);
+  byId("table-players").classList.toggle("very-dense-seats", opponents.length > 6);
   byId("table-players").innerHTML = opponents.map((player, index) => {
     const position = opponentPosition(index, opponents.length);
     const backs = Array.from({ length: player.handSize }, (_, cardIndex) =>
@@ -339,7 +341,13 @@ function openAbilityPanel(characterId, isBluff) {
   const options = isBluff
     ? characters.filter((character) => !ownCharacters.has(character.id) && self.coins >= characterActionCost(character))
     : characters.filter(({ id }) => id === characterId);
-  if (!options.length) return showError("Não há personagem disponível para essa ação.");
+  if (!options.length && isBluff) {
+    const bluffable = characters.filter((character) => !ownCharacters.has(character.id));
+    if (!bluffable.length) return showError("Todas as cartas que poderiam ser alegadas já estão na sua mão.");
+    const cheapestCost = Math.min(...bluffable.map(characterActionCost));
+    return showError(`Você precisa de pelo menos ${cheapestCost} moeda(s) para pagar uma habilidade disponível e blefar.`);
+  }
+  if (!options.length) return showError("Esta habilidade não está disponível agora.");
   selectedTableAction = "ability";
   fillClaimCharacterSelect(byId("claim-character"), options);
   byId("claim-character").disabled = !isBluff;
@@ -504,7 +512,7 @@ function renderCoupWizard() {
       coupWizard.targetPlayerId = playerId;
       coupWizard.step = 1;
       renderCoupWizard();
-    });
+    }, "Escolha quem receberá o Golpe");
     return;
   }
   clearTargetPicker();
@@ -562,7 +570,7 @@ function renderCharacterParameters() {
       abilityWizard.parameters.targetPlayerId = playerId;
       abilityWizard.step += 1;
       next();
-    });
+    }, text);
   };
   if (["jeff-dino", "rodrigo", "marcelo-moreira", "wave"].includes(characterId) && abilityWizard.step === 0) {
     const players = characterId === "jeff-dino" ? activePlayers : otherPlayers;
@@ -599,7 +607,7 @@ function renderCharacterParameters() {
       abilityWizard.parameters.targetPlayerIds = [...(abilityWizard.parameters.targetPlayerIds ?? []), playerId];
       abilityWizard.step += 1;
       if (abilityWizard.step === 2) finishAbilityWizard(); else renderCharacterParameters();
-    });
+    }, first ? "Escolha o segundo jogador" : "Escolha o primeiro jogador");
     return updateClaimButton();
   }
   if (characterId === "deivison" && abilityWizard.step === 0) {
@@ -638,9 +646,11 @@ function finishAbilityWizard() {
   updateClaimButton();
 }
 
-function requestTableTarget(playerIds, onSelect) {
+function requestTableTarget(playerIds, onSelect, instruction = "Escolha um jogador") {
   targetPicker = { playerIds: new Set(playerIds), onSelect };
   byId("action-console").classList.add("target-picking");
+  byId("table-instruction").textContent = instruction;
+  byId("table-instruction").hidden = false;
   refreshTargetHighlights();
 }
 
@@ -654,6 +664,7 @@ function chooseTableTarget(playerId) {
 function clearTargetPicker() {
   targetPicker = null;
   byId("action-console")?.classList.remove("target-picking");
+  if (byId("table-instruction")) byId("table-instruction").hidden = true;
   document.querySelectorAll(".selectable-target").forEach((element) => element.classList.remove("selectable-target"));
 }
 
@@ -697,7 +708,7 @@ function renderEffectChoice(game, pending) {
     const targets = game.players.filter(({ eliminated, id }) => !eliminated && id !== room.selfPlayerId);
     if (effectWizard.step === 0) {
       container.innerHTML = '<div class="wizard-step"><strong>Andreia: escolha o alvo do Golpe grátis</strong><p>Toque no jogador sobre a mesa.</p></div>';
-      requestTableTarget(targets.map(({ id }) => id), (playerId) => { effectWizard.values.targetPlayerId = playerId; effectWizard.step = 1; renderEffectChoice(game, pending); });
+      requestTableTarget(targets.map(({ id }) => id), (playerId) => { effectWizard.values.targetPlayerId = playerId; effectWizard.step = 1; renderEffectChoice(game, pending); }, "Escolha o alvo do Golpe grátis");
     } else {
       clearTargetPicker();
       container.innerHTML = `<div class="wizard-step"><strong>Escolha o palpite</strong>${characterChoiceButtons(game.characterPool, "andreia-guess")}</div>`;
@@ -721,7 +732,7 @@ function renderEffectChoice(game, pending) {
     const targets = game.players.filter(({ eliminated }) => !eliminated);
     if (effectWizard.step === 0) {
       container.innerHTML = '<div class="wizard-step"><strong>Altimar: escolha o alvo</strong><p>Toque no jogador sobre a mesa.</p></div>';
-      requestTableTarget(targets.map(({ id }) => id), (playerId) => { effectWizard.values.targetPlayerId = playerId; effectWizard.step = 1; renderEffectChoice(game, pending); });
+      requestTableTarget(targets.map(({ id }) => id), (playerId) => { effectWizard.values.targetPlayerId = playerId; effectWizard.step = 1; renderEffectChoice(game, pending); }, "Escolha o alvo do Altimar");
     } else if (effectWizard.step === 1) {
       clearTargetPicker();
       const target = game.players.find(({ id }) => id === effectWizard.values.targetPlayerId);
@@ -765,7 +776,7 @@ function renderForcedWaveAction(game, pending, container) {
   if (pending.forcedAction === "coup") {
     if (effectWizard.step === 0) {
       container.innerHTML = '<div class="wizard-step"><strong>Wave obriga um Golpe: escolha o alvo</strong><p>O usuário do Wave não pode ser escolhido.</p></div>';
-      requestTableTarget(allowedTargets.map(({ id }) => id), (playerId) => { effectWizard.values.targetPlayerId = playerId; effectWizard.step = 1; renderForcedWaveAction(game, pending, container); });
+      requestTableTarget(allowedTargets.map(({ id }) => id), (playerId) => { effectWizard.values.targetPlayerId = playerId; effectWizard.step = 1; renderForcedWaveAction(game, pending, container); }, "Escolha o alvo do Golpe forçado");
     } else {
       clearTargetPicker();
       container.innerHTML = `<div class="wizard-step"><strong>Escolha o palpite</strong>${characterChoiceButtons(game.characterPool, "wave-guess")}</div>`;
@@ -795,14 +806,14 @@ function renderForcedCharacterParameters(game, pending, container, allowedTarget
   const send = () => emit("wave:character", { characterId: id, parameters });
   if (["jeff-dino", "rodrigo", "marcelo-moreira", "wave"].includes(id) && effectWizard.step === 0) {
     container.innerHTML = '<div class="wizard-step"><strong>Escolha o alvo na mesa</strong><p>O usuário do Wave não pode ser escolhido.</p></div>';
-    requestTableTarget(allowedTargets.map(({ id: playerId }) => playerId), (playerId) => { parameters.targetPlayerId = playerId; effectWizard.step = 1; renderForcedCharacterParameters(game, pending, container, allowedTargets); });
+    requestTableTarget(allowedTargets.map(({ id: playerId }) => playerId), (playerId) => { parameters.targetPlayerId = playerId; effectWizard.step = 1; renderForcedCharacterParameters(game, pending, container, allowedTargets); }, "Escolha o alvo na mesa");
     return;
   }
   if (id === "luis-sapeca" && effectWizard.step < 2) {
     const selected = parameters.targetPlayerIds ??= [];
     const choices = allowedTargets.filter(({ id: playerId }) => !selected.includes(playerId));
     container.innerHTML = `<div class="wizard-step"><strong>Escolha o ${selected.length ? "segundo" : "primeiro"} jogador na mesa</strong></div>`;
-    requestTableTarget(choices.map(({ id: playerId }) => playerId), (playerId) => { selected.push(playerId); effectWizard.step += 1; renderForcedCharacterParameters(game, pending, container, allowedTargets); });
+    requestTableTarget(choices.map(({ id: playerId }) => playerId), (playerId) => { selected.push(playerId); effectWizard.step += 1; renderForcedCharacterParameters(game, pending, container, allowedTargets); }, selected.length ? "Escolha o segundo jogador" : "Escolha o primeiro jogador");
     return;
   }
   clearTargetPicker();
@@ -861,12 +872,6 @@ function renderPool(game) {
 function openPoolDialog() {
   const dialog = byId("pool-dialog");
   if (dialog.open) return;
-  // Um <dialog> modal invisível permanece na top layer e bloqueia todos os
-  // toques. Nunca o abra se alguma regra responsiva voltar a ocultá-lo.
-  if (getComputedStyle(dialog).display === "none") {
-    showError("Não foi possível abrir os personagens nesta resolução.");
-    return;
-  }
   dialog.showModal();
 }
 

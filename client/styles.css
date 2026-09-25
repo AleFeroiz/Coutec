@@ -266,6 +266,101 @@ label small { color:#849087; font-weight:500; line-height:1.35; }
   .pool-character p { font-size:.78rem; }
 }
 
+/* Mesa circular: jogador local embaixo e adversários distribuídos no arco. */
+.in-game #game-view { align-items:center; }
+.game-hud { width:100%; }
+.game-table {
+  flex:none;
+  width:min(100%,calc(100dvh - 76px));
+  height:auto;
+  min-height:0;
+  aspect-ratio:1;
+  margin:0 auto;
+  border-radius:50%;
+  background:radial-gradient(circle at center,#8abf48 0 18%,#528c3e 19% 50%,#2f6338 51% 68%,#172e24 69%);
+}
+.game-table::before { inset:15%; border-radius:50%; }
+
+@media (max-width:700px) {
+  .in-game { min-height:100dvh; overflow:auto; }
+  .in-game .shell { min-height:100dvh; }
+  .game-table {
+    position:relative;
+    display:block;
+    width:min(calc(100vw - .6rem),calc(100dvh - 78px));
+    height:auto;
+    min-height:0;
+    aspect-ratio:1;
+    overflow:hidden;
+    border-radius:50%;
+  }
+  .opponents {
+    position:absolute;
+    inset:0;
+    z-index:6;
+    display:block;
+    width:auto;
+    min-height:0;
+    padding:0;
+    overflow:visible;
+    pointer-events:none;
+  }
+  .player-tile {
+    position:absolute;
+    left:var(--x)!important;
+    top:var(--y)!important;
+    width:88px;
+    transform:translate(-50%,-50%)!important;
+    font-size:.65rem;
+    pointer-events:auto;
+  }
+  .player-tile.current { transform:translate(-50%,-50%) scale(1.05)!important; }
+  .player-nameplate { max-width:84px; font-size:.64rem; }
+  .player-tile .card-backs { height:48px; }
+  .player-tile .card-back { width:33px; height:47px; }
+  .player-tile .coin-pile { margin-left:-10px; transform:scale(.65); }
+  .dense-seats .player-tile { width:70px; }
+  .dense-seats .player-nameplate { max-width:68px; font-size:.57rem; }
+  .dense-seats .card-back { width:28px; height:41px; margin-left:-10px; }
+  .very-dense-seats .player-tile { transform:translate(-50%,-50%) scale(.82)!important; }
+  .table-center {
+    position:absolute;
+    left:50%;
+    top:48%;
+    z-index:8;
+    display:flex;
+    width:112px;
+    min-height:0;
+    transform:translate(-50%,-50%);
+    pointer-events:auto;
+  }
+  .deck-stack { left:-48px; transform:translateY(-50%) rotate(-12deg) scale(.48); }
+  .cps-collect { width:92px; }
+  .cps-collect .building-body { height:54px; }
+  .quick-actions {
+    position:absolute;
+    right:6%;
+    bottom:25%;
+    z-index:22;
+    display:flex;
+    width:auto;
+    flex-direction:column;
+  }
+  .own-seat {
+    position:absolute;
+    left:50%;
+    bottom:1%;
+    z-index:12;
+    width:62%;
+    min-height:0;
+    transform:translateX(-50%);
+  }
+  .own-hand-zone,.own-seat .cards { height:96px; min-height:96px; }
+  .own-seat .card { width:68px; height:90px; margin-left:-12px; font-size:.62rem; border-width:3px; }
+  .own-seat .coin-pile { transform:scale(.66); }
+  .coin-effects { display:none; }
+}
+
 @media (max-width:380px) {
   .shell { width:calc(100% - .6rem); }
   .game-hud { align-items:flex-start; }
@@ -431,4 +526,104 @@ label small { color:#849087; font-weight:500; line-height:1.35; }
   .action-drawer.target-picking { top:72px; bottom:auto; max-height:180px; padding-top:.75rem; }
   .choice-card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); max-height:38dvh; }
   .player-tile,.player-nameplate,.opponent-hand-zone,.cps-collect,.own-hand-zone,.own-seat .card,#pool-button,.quick-actions button { pointer-events:auto!important; }
+}
+
+/* Overrides finais da mesa circular; precisam vir após todos os breakpoints antigos. */
+.in-game #game-view { align-items:center; }
+.game-hud { width:100%; }
+.game-table {
+  flex:none;
+  width:min(100%,calc(100dvh - 76px));
+  height:auto;
+  min-height:0;
+  aspect-ratio:1;
+  margin:0 auto;
+  overflow:hidden;
+  border-radius:50%;
+  background:radial-gradient(circle at center,#8abf48 0 18%,#528c3e 19% 50%,#2f6338 51% 68%,#172e24 69%);
+}
+.game-table::before { inset:15%; border-radius:50%; }
+
+@media (max-width:700px) {
+  .game-table {
+    position:relative;
+    display:block;
+    width:min(calc(100vw - .6rem),calc(100dvh - 78px));
+    height:auto;
+    min-height:0;
+    aspect-ratio:1;
+    overflow:hidden;
+    border-radius:50%;
+  }
+  .opponents { position:absolute; inset:0; z-index:6; display:block; width:auto; min-height:0; padding:0; overflow:visible; pointer-events:none; }
+  .player-tile { position:absolute; left:var(--x)!important; top:var(--y)!important; width:88px; transform:translate(-50%,-50%)!important; font-size:.65rem; pointer-events:auto; }
+  .player-tile.current { transform:translate(-50%,-50%) scale(1.05)!important; }
+  .player-nameplate { max-width:84px; font-size:.64rem; }
+  .player-tile .card-backs { height:48px; }
+  .player-tile .card-back { width:33px; height:47px; }
+  .player-tile .coin-pile { margin-left:-10px; transform:scale(.65); }
+  .dense-seats .player-tile { width:70px; }
+  .dense-seats .player-nameplate { max-width:68px; font-size:.57rem; }
+  .dense-seats .card-back { width:28px; height:41px; margin-left:-10px; }
+  .very-dense-seats .player-tile { transform:translate(-50%,-50%) scale(.82)!important; }
+  .table-center { position:absolute; left:50%; top:48%; z-index:8; display:flex; width:112px; min-height:0; transform:translate(-50%,-50%); pointer-events:auto; }
+  .deck-stack { left:-48px; transform:translateY(-50%) rotate(-12deg) scale(.48); }
+  .cps-collect { width:92px; }
+  .cps-collect .building-body { height:54px; }
+  .quick-actions { position:absolute; right:6%; bottom:25%; z-index:22; display:flex; width:auto; flex-direction:column; }
+  .own-seat { position:absolute; left:50%; bottom:1%; z-index:12; width:62%; min-height:0; transform:translateX(-50%); }
+  .own-hand-zone,.own-seat .cards { height:96px; min-height:96px; }
+  .own-seat .card { width:68px; height:90px; margin-left:-12px; font-size:.62rem; border-width:3px; }
+  .own-seat .coin-pile { transform:scale(.66); }
+}
+
+/* Fluxos compactos: etapas no centro e seleção de alvo diretamente na mesa. */
+.table-instruction {
+  position:absolute;
+  left:50%;
+  top:61%;
+  z-index:80;
+  max-width:min(82%,360px);
+  padding:.48rem .8rem;
+  transform:translate(-50%,-50%);
+  border:1px solid #f0d46f99;
+  border-radius:999px;
+  background:#101711e6;
+  color:#ffe58d;
+  font-size:.82rem;
+  font-weight:900;
+  text-align:center;
+  box-shadow:0 7px 18px #0008;
+  pointer-events:none;
+}
+.action-drawer:not(.target-picking) {
+  position:absolute;
+  left:50%;
+  top:50%;
+  bottom:auto;
+  width:min(390px,calc(100% - 1rem));
+  max-height:68%;
+  padding:.72rem;
+  transform:translate(-50%,-50%);
+  border-radius:14px;
+}
+.action-drawer.target-picking { display:none; }
+.action-drawer #claim-help { display:none; }
+.action-drawer h2 { margin:0 0 .2rem; font-size:.9rem; }
+.action-drawer #action-prompt { margin:0 0 .45rem; font-size:.7rem; }
+.wizard-step { gap:.45rem; padding:.55rem; }
+.cps-collect { width:92px; }
+.cps-collect .building-body { height:55px; gap:5px; padding:7px; border-width:3px; }
+.cps-collect .building-roof { font-size:.4rem; }
+.cps-collect .collect-hint { margin-top:.22rem; padding:.2rem .42rem; font-size:.58rem; }
+
+@media (max-width:700px) {
+  .table-instruction { top:60%; max-width:76%; padding:.4rem .65rem; font-size:.7rem; }
+  .action-drawer:not(.target-picking) { position:absolute; top:50%; width:min(82%,330px); max-height:62%; padding:.6rem; }
+  .choice-card-grid { max-height:31dvh; }
+  .choice-card { min-height:54px; padding:.4rem; font-size:.72rem; }
+  .cps-collect { width:68px; }
+  .cps-collect .building-body { height:39px; gap:3px; padding:5px; border-width:2px; }
+  .cps-collect .building-roof { padding:.2rem; font-size:.31rem; }
+  .cps-collect .collect-hint { font-size:.5rem; }
 }
