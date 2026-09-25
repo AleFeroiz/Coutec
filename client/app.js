@@ -14,11 +14,8 @@ let lastAnimatedEvent = 0;
 const byId = (id) => document.getElementById(id);
 
 const configuredOnlineUrl = window.COUTEC_CONFIG?.onlineServerUrl ?? "";
-byId("offline-connect-button").addEventListener("click", () =>
-  connect("http://localhost:3000", "local"),
-);
 byId("online-connect-button").addEventListener("click", () =>
-  connect(configuredOnlineUrl, "online"),
+  connect(configuredOnlineUrl),
 );
 byId("create-form").addEventListener("submit", createRoom);
 byId("join-form").addEventListener("submit", joinRoom);
@@ -55,12 +52,10 @@ byId("copy-code").addEventListener("click", async () => {
   showMessage("Código copiado.");
 });
 
-async function connect(rawServerUrl, mode) {
+async function connect(rawServerUrl) {
   const serverUrl = rawServerUrl.trim().replace(/\/$/, "");
   if (!serverUrl) return showError("O servidor online ainda não foi configurado.");
-  byId("connection-status").textContent = mode === "local"
-    ? "Conectando ao servidor local…"
-    : "Conectando ao servidor online…";
+  byId("connection-status").textContent = "Conectando ao servidor online…";
   try {
     await loadSocketClient(`${serverUrl}/socket.io/socket.io.js`);
     socket?.disconnect();

@@ -12,6 +12,7 @@ header { margin-bottom:2rem; } h1 { margin:0; font:900 clamp(3rem,10vw,6rem)/.9 
 .panel { padding:1.35rem; border:1px solid var(--line); border-radius:14px; background:color-mix(in srgb,var(--panel) 92%,transparent); box-shadow:0 16px 40px #0004; }
 .connection-heading { max-width:620px; margin:0 auto 1.25rem; text-align:center; }
 .connection-heading h2 { margin-bottom:.45rem; font-size:clamp(1.7rem,4vw,2.5rem); }
+.online-play-button { display:block; width:min(420px,100%); min-height:58px; margin:0 auto; font-size:1.08rem; text-transform:uppercase; letter-spacing:.08em; }
 .connection-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
 .connection-choice { position:relative; display:grid; grid-template-rows:auto 1fr auto; gap:.9rem; min-height:285px; padding:1.25rem; overflow:hidden; border:1px solid var(--line); border-radius:16px; background:linear-gradient(145deg,#242c26,#151a16); }
 .connection-choice::after { content:""; position:absolute; width:160px; height:160px; right:-75px; top:-75px; border-radius:50%; background:var(--green); opacity:.07; }

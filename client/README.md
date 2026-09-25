@@ -16,15 +16,13 @@ Dívidas do Rodrigo e requisitos do Marcelo aparecem como indicadores sobre o
 jogador afetado e interrompem o começo do turno quando uma carta precisa ser
 escolhida.
 
-Na entrada existem dois modos de conexão:
+Na entrada existe somente o botão **Jogar online**. Ele usa diretamente o
+servidor configurado em `client/config.js`, sem mostrar ou solicitar endereço
+ao jogador. O servidor atual é `https://coutec.onrender.com`.
 
-- **Offline / local:** execute `npm start` dentro de `/server`, abra
-  `http://localhost:3000` e escolha "Jogar localmente". Cada aba representa um
-  jogador. Esse modo não precisa de internet, mas precisa do motor Node local.
-- **Online:** publica-se `/server` na Render e `/client` na Vercel. Cole a URL
-  gerada pela Render em `client/config.js`; ela será preenchida automaticamente
-  para todos os jogadores. Ao selecionar "Jogar online", a conexão é feita
-  diretamente, sem solicitar endereço ao jogador.
+Para desenvolvimento, ainda é possível executar `npm start` dentro de
+`/server` e abrir `http://localhost:3000`, mas esse fluxo não aparece para o
+jogador no site publicado.
 
 `onlineServerUrl` não é uma senha: é o endereço público que o navegador precisa
 conhecer para abrir a conexão Socket.IO.
