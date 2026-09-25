@@ -6,9 +6,9 @@ const { GameRuleError } = require("./errors");
 const { createPlayer } = require("./player");
 
 function createGameState({ config, players, rng = Math.random }) {
-  if (!Array.isArray(players) || players.length < 3) {
+  if (!Array.isArray(players) || players.length < 2) {
     throw new GameRuleError(
-      "O COUTEC precisa de pelo menos 3 jogadores.",
+      "O COUTEC precisa de pelo menos 2 jogadores.",
       "NOT_ENOUGH_PLAYERS",
     );
   }

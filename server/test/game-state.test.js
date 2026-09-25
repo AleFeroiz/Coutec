@@ -146,9 +146,9 @@ test("o modo manual aceita banimentos fora do pool escolhido", () => {
   assert.deepEqual(config.bannedCharacters, ["wave", "sandra"]);
 });
 
-test("somente o host inicia uma sala com três ou mais jogadores", () => {
+test("somente o host inicia uma sala com dois ou mais jogadores", () => {
   const room = createRoom({ id: "sala-1", hostPlayerId: "p1" });
-  for (const player of players) addPlayer(room, player);
+  for (const player of players.slice(0, 2)) addPlayer(room, player);
 
   assert.throws(
     () => startGame(room, { requestingPlayerId: "p2" }),
@@ -160,7 +160,16 @@ test("somente o host inicia uma sala com três ou mais jogadores", () => {
     rng: fixedRng,
   });
   assert.equal(room.phase, "playing");
-  assert.equal(game.players.length, 3);
+  assert.equal(game.players.length, 2);
+});
+
+test("uma partida não inicia com apenas um jogador", () => {
+  const room = createRoom({ id: "sala-solo", hostPlayerId: "p1" });
+  addPlayer(room, players[0]);
+  assert.throws(
+    () => startGame(room, { requestingPlayerId: "p1", rng: fixedRng }),
+    (error) => error.code === "NOT_ENOUGH_PLAYERS",
+  );
 });
 
 test("coletar uma moeda encerra o turno e passa ao próximo jogador ativo", () => {

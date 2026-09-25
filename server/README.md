@@ -10,8 +10,8 @@ npm install
 npm start
 ```
 
-Abra `http://localhost:3000` em três abas. Crie uma sala na primeira e use o
-código para entrar nas outras duas.
+Abra `http://localhost:3000` em duas abas. Crie uma sala na primeira e use o
+código para entrar na outra.
 
 O processo usa `PORT` (padrão `3000`) e `CLIENT_ORIGIN`, que aceita uma ou mais
 origens do front-end separadas por vírgula.
@@ -33,6 +33,7 @@ Implementado:
 - salas, jogadores, mãos e moedas;
 - quantidade inicial de moedas configurável pelo host (padrão: zero);
 - início de partida exclusivo do host;
+- partidas para dois ou mais jogadores;
 - sorteio do primeiro jogador;
 - distribuição de duas cartas para cada jogador;
 - coleta de uma moeda e passagem de turno;

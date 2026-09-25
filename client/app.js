@@ -158,7 +158,7 @@ function renderLobby() {
   ).join("");
   const isHost = room.selfPlayerId === room.hostPlayerId;
   byId("start-button").hidden = !isHost;
-  byId("start-button").disabled = room.players.length < 3;
+  byId("start-button").disabled = room.players.length < 2;
   byId("waiting-host").hidden = isHost;
 }
 
