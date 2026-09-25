@@ -72,22 +72,38 @@
           <div id="table-players" class="opponents"></div>
           <div class="table-center">
             <div class="deck-stack" aria-label="Baralho"><span>C</span><span>O</span><span>U</span><span>T</span><span>E</span><span>C</span></div>
-            <section id="action-console" class="action-console">
+            <button id="collect-button" class="cps-building cps-collect" aria-label="Coletar uma moeda do Centro Paula Souza">
+              <span class="building-roof">CENTRO PAULA SOUZA</span>
+              <span class="building-body"><i></i><i></i><i></i><b></b><i></i><i></i></span>
+              <span class="collect-hint">● Coletar moeda</span>
+            </button>
+          </div>
+
+          <div id="quick-actions" class="quick-actions">
+            <button id="bluff-button" class="secondary">Blefar</button>
+            <button id="coup-button" class="danger">Golpe · 7</button>
+          </div>
+
+          <section id="action-console" class="action-console action-drawer" hidden>
+              <button id="close-action-console" class="drawer-close secondary" aria-label="Fechar">×</button>
               <h2 id="action-title">Escolha sua ação</h2>
               <p id="action-prompt" class="muted"></p>
 
               <div id="normal-actions">
-                <button id="collect-button" class="collect-action">● Coletar 1 moeda</button>
-                <div class="action-row">
+                <div id="claim-panel">
+                  <div class="action-row">
                   <label>Personagem <select id="claim-character"></select></label>
                   <button id="claim-button">Usar habilidade</button>
+                  </div>
+                  <div id="character-parameters"></div>
+                  <p id="claim-help" class="prototype-note">Escolha uma habilidade disponível no pool da partida.</p>
                 </div>
-                <div id="character-parameters"></div>
-                <p id="claim-help" class="prototype-note">Escolha uma habilidade disponível no pool da partida.</p>
-                <div class="coup-controls">
+                <div id="coup-panel" hidden>
+                  <div class="coup-controls">
                   <label>Alvo <select id="coup-target"></select></label>
                   <label>Palpite <select id="coup-character"></select></label>
-                  <button id="coup-button" class="danger">Golpe · 7</button>
+                  <button id="confirm-coup-button" class="danger">Confirmar Golpe</button>
+                  </div>
                 </div>
               </div>
 
@@ -109,13 +125,7 @@
                 <button id="reaction-pass-button" class="secondary">Não usar</button>
               </div>
               <div id="effect-choice-actions" hidden></div>
-            </section>
-          </div>
-
-          <div id="cps-building" class="cps-building" aria-label="Centro Paula Souza">
-            <div class="building-roof">CENTRO PAULA SOUZA</div>
-            <div class="building-body"><i></i><i></i><i></i><b></b><i></i><i></i></div>
-          </div>
+          </section>
           <div id="coin-effects" class="coin-effects" aria-hidden="true"></div>
 
           <section class="own-seat">
@@ -124,10 +134,6 @@
           </section>
         </section>
 
-        <div class="game-grid history-grid">
-          <details class="panel" open><summary>Cartas reveladas</summary><ol id="revealed-list" class="history"></ol></details>
-          <details class="panel"><summary>Histórico da partida</summary><ol id="event-list" class="history"></ol></details>
-        </div>
       </section>
 
       <dialog id="pool-dialog">

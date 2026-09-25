@@ -11,6 +11,7 @@ let socket = null;
 let room = null;
 let shownPoolRoomId = null;
 let lastAnimatedEvent = 0;
+let selectedTableAction = null;
 const byId = (id) => document.getElementById(id);
 
 const configuredOnlineUrl = window.COUTEC_CONFIG?.onlineServerUrl ?? "";
@@ -20,13 +21,16 @@ byId("online-connect-button").addEventListener("click", () =>
 byId("create-form").addEventListener("submit", createRoom);
 byId("join-form").addEventListener("submit", joinRoom);
 byId("start-button").addEventListener("click", () => emit("room:start", {}));
-byId("collect-button").addEventListener("click", () => emit("action:collect", {}));
-byId("claim-button").addEventListener("click", () =>
+byId("collect-button").addEventListener("click", () => {
+  selectedTableAction = null;
+  emit("action:collect", {});
+});
+byId("claim-button").addEventListener("click", () => {
   emit("action:declare-character", {
     characterId: byId("claim-character").value,
     parameters: readCharacterParameters(),
-  }),
-);
+  });
+});
 byId("claim-character").addEventListener("change", () => {
   renderCharacterParameters();
   updateClaimButton();
@@ -41,12 +45,15 @@ byId("reaction-claim-button").addEventListener("click", () => emit("reaction:cla
 byId("reaction-pass-button").addEventListener("click", () => emit("reaction:pass", {}));
 byId("pool-button").addEventListener("click", () => byId("pool-dialog").showModal());
 byId("close-pool").addEventListener("click", () => byId("pool-dialog").close());
-byId("coup-button").addEventListener("click", () =>
+byId("bluff-button").addEventListener("click", openBluffPanel);
+byId("coup-button").addEventListener("click", openCoupPanel);
+byId("close-action-console").addEventListener("click", closeActionConsole);
+byId("confirm-coup-button").addEventListener("click", () => {
   emit("action:coup", {
     targetPlayerId: byId("coup-target").value,
     guessedCharacterId: byId("coup-character").value,
-  }),
-);
+  });
+});
 byId("copy-code").addEventListener("click", async () => {
   await navigator.clipboard.writeText(room.id);
   showMessage("Código copiado.");
@@ -198,18 +205,21 @@ function renderGame() {
   renderOpponents(game);
   renderControls(game, self, isOwnTurn);
   renderPool(game);
-  renderHistory(game);
   animateNewEvents(game);
 }
 
 function renderOwnHand(game) {
+  const self = game.players.find(({ id }) => id === room.selfPlayerId);
   byId("own-hand").innerHTML = game.ownHand.length
     ? game.ownHand.map((card, index) => `
-      <article class="card" data-initial="${characterName(card.characterId).charAt(0)}"
+      <button type="button" class="card ${canActivateOwnedCard(game, self, card) ? "card-ready" : "card-inactive"}" ${canActivateOwnedCard(game, self, card) ? "" : "disabled"} data-use-character="${card.characterId}" data-initial="${characterName(card.characterId).charAt(0)}"
         style="--card-rotation:${index ? 5 : -5}deg;--card-y:${index ? "0" : "5px"}">
         <span>${characterName(card.characterId)}</span>
-      </article>`).join("")
+      </button>`).join("")
     : '<p class="muted">Você não possui mais influência.</p>';
+  for (const cardButton of byId("own-hand").querySelectorAll("[data-use-character]")) {
+    cardButton.addEventListener("click", () => activateOwnedCard(cardButton.dataset.useCharacter));
+  }
 }
 
 function renderOpponents(game) {
@@ -233,6 +243,97 @@ function renderOpponents(game) {
   }).join("");
 }
 
+function canActivateOwnedCard(game, self, card) {
+  if (!self || self.eliminated) return false;
+  const reaction = game.pendingReaction;
+  if (reaction) {
+    return card.characterId === reaction.type
+      && reaction.eligiblePlayerIds.includes(self.id)
+      && !reaction.passedPlayerIds.includes(self.id);
+  }
+  const pending = game.pendingEffectChoice;
+  if (pending?.type === "andreia-offer") {
+    return pending.actorPlayerId === self.id && card.characterId === "andreia";
+  }
+  if (game.pendingClaim || pending || game.currentPlayerId !== self.id) return false;
+  if (["andreia", "robertinho", "ze"].includes(card.characterId)) return false;
+  if (self.coins >= 10 && card.characterId !== "paula-granada") return false;
+  const character = game.characters?.find(({ id }) => id === card.characterId);
+  const cost = characterActionCost(character);
+  return self.coins >= cost;
+}
+
+function characterActionCost(character) {
+  if (!character) return Infinity;
+  if (character.id === "paula-granada") return 7;
+  if (character.id === "rodrigo") return 2;
+  return character.cost?.type === "coins" ? character.cost.amount : 0;
+}
+
+function activateOwnedCard(characterId) {
+  const game = room?.game;
+  if (!game) return;
+  const self = game.players.find(({ id }) => id === room.selfPlayerId);
+  const card = game.ownHand.find(({ characterId: id }) => id === characterId);
+  if (!card || !canActivateOwnedCard(game, self, card)) return;
+  if (game.pendingReaction?.type === characterId) {
+    emit("reaction:claim", {});
+    return;
+  }
+  if (game.pendingEffectChoice?.type === "andreia-offer" && characterId === "andreia") {
+    emit("andreia:respond", { use: true });
+    return;
+  }
+  openAbilityPanel(characterId, false);
+}
+
+function openAbilityPanel(characterId, isBluff) {
+  if (!room?.game) return;
+  const characters = room.game.characters.filter(({ id, implemented }) =>
+    implemented && !["andreia", "robertinho", "ze"].includes(id),
+  );
+  const self = room.game.players.find(({ id }) => id === room.selfPlayerId);
+  const ownCharacters = new Set(room.game.ownHand.map(({ characterId: id }) => id));
+  const options = isBluff
+    ? characters.filter((character) => !ownCharacters.has(character.id) && self.coins >= characterActionCost(character))
+    : characters.filter(({ id }) => id === characterId);
+  if (!options.length) return showError("Não há personagem disponível para essa ação.");
+  selectedTableAction = "ability";
+  fillClaimCharacterSelect(byId("claim-character"), options);
+  byId("claim-character").disabled = !isBluff;
+  byId("claim-panel").hidden = false;
+  byId("coup-panel").hidden = true;
+  byId("normal-actions").hidden = false;
+  byId("action-console").hidden = false;
+  byId("action-title").textContent = isBluff ? "Escolha seu blefe" : `Usar ${characterName(characterId)}`;
+  byId("action-prompt").textContent = isBluff
+    ? "Os demais jogadores poderão desafiar sua alegação."
+    : "Escolha os detalhes e confirme a habilidade.";
+  renderCharacterParameters();
+  updateClaimButton();
+}
+
+function openBluffPanel() {
+  openAbilityPanel(null, true);
+}
+
+function openCoupPanel() {
+  if (!room?.game) return;
+  selectedTableAction = "coup";
+  byId("claim-panel").hidden = true;
+  byId("coup-panel").hidden = false;
+  byId("normal-actions").hidden = false;
+  byId("action-console").hidden = false;
+  byId("action-title").textContent = "Preparar Golpe";
+  byId("action-prompt").textContent = "Escolha um jogador e adivinhe uma das cartas dele.";
+}
+
+function closeActionConsole() {
+  if (room?.game?.pendingClaim || room?.game?.pendingReaction || room?.game?.pendingEffectChoice) return;
+  selectedTableAction = null;
+  byId("action-console").hidden = true;
+}
+
 function renderControls(game, self, isOwnTurn) {
   const claim = game.pendingClaim;
   const reaction = game.pendingReaction;
@@ -240,7 +341,15 @@ function renderControls(game, self, isOwnTurn) {
   const challenge = byId("challenge-actions");
   const loss = byId("loss-actions");
   const effectChoice = game.pendingEffectChoice;
-  normal.hidden = Boolean(claim || reaction || effectChoice);
+  const blockingInteraction = Boolean(claim || reaction || effectChoice);
+  if (!blockingInteraction && isOwnTurn && self.coins >= 10) selectedTableAction = "coup";
+  if (blockingInteraction) selectedTableAction = null;
+  if (!isOwnTurn && !blockingInteraction) selectedTableAction = null;
+  const drawerOpen = blockingInteraction || Boolean(selectedTableAction);
+  byId("action-console").hidden = !drawerOpen;
+  byId("close-action-console").hidden = blockingInteraction;
+  byId("quick-actions").hidden = blockingInteraction || !isOwnTurn || self.eliminated;
+  normal.hidden = blockingInteraction || !selectedTableAction;
   challenge.hidden = !claim || claim.stage !== "challenge-window";
   loss.hidden = !claim || claim.stage !== "loss-selection" || claim.loserPlayerId !== room.selfPlayerId;
   byId("effect-choice-actions").hidden = !effectChoice;
@@ -250,27 +359,31 @@ function renderControls(game, self, isOwnTurn) {
   const characterDetails = Array.isArray(game.characters)
     ? game.characters
     : game.characterPool.map((id) => ({ id, name: characterName(id), implemented: false }));
-  const implemented = characterDetails.filter(({ implemented }) => implemented).map(({ id }) => id);
-  fillClaimCharacterSelect(byId("claim-character"), characterDetails);
   fillCharacterSelect(byId("coup-character"), game.characterPool);
   byId("coup-target").innerHTML = targets.map((player) =>
     `<option value="${player.id}">${escapeHtml(player.name)}</option>`,
   ).join("");
   byId("collect-button").disabled = !isOwnTurn || self.eliminated || self.coins >= 10;
-  byId("claim-button").dataset.baseDisabled = String(!isOwnTurn || self.eliminated || !implemented.length);
+  byId("claim-button").dataset.baseDisabled = String(!isOwnTurn || self.eliminated);
   updateClaimButton();
   byId("coup-button").disabled = !isOwnTurn || self.eliminated || self.coins < 7 || !targets.length;
+  byId("confirm-coup-button").disabled = byId("coup-button").disabled;
+  byId("bluff-button").disabled = !isOwnTurn || self.eliminated || self.coins >= 10;
+
+  byId("claim-panel").hidden = selectedTableAction !== "ability";
+  byId("coup-panel").hidden = selectedTableAction !== "coup";
 
   if (!claim) {
     if (reaction) {
       const eligible = reaction.eligiblePlayerIds.includes(room.selfPlayerId);
       const passed = reaction.passedPlayerIds.includes(room.selfPlayerId);
+      const ownsReactionCard = game.ownHand.some(({ characterId }) => characterId === reaction.type);
       byId("action-title").textContent = "Janela de reação";
       byId("reaction-description").textContent = reaction.type === "ze"
         ? "Alguém vai alegar Zé para atrasar esta habilidade?"
         : "Alguém vai alegar Robertinho depois desta habilidade?";
-      byId("reaction-claim-button").textContent = `Alegar ${characterName(reaction.type)}`;
-      byId("reaction-claim-button").hidden = !eligible || passed;
+      byId("reaction-claim-button").textContent = `Blefar com ${characterName(reaction.type)}`;
+      byId("reaction-claim-button").hidden = !eligible || passed || ownsReactionCard;
       byId("reaction-pass-button").hidden = !eligible || passed;
       byId("reaction-timer").textContent = `${Math.max(0, (reaction.expiresAt - Date.now()) / 1000).toFixed(1)}s`;
       return;
@@ -282,11 +395,11 @@ function renderControls(game, self, isOwnTurn) {
     const mandatoryCoup = isOwnTurn && self.coins >= 10;
     byId("action-title").textContent = mandatoryCoup
       ? "Golpe obrigatório"
-      : isOwnTurn ? "Sua vez: escolha uma ação" : `Aguardando ${game.players.find(({ id }) => id === game.currentPlayerId)?.name ?? "jogador"}`;
+      : selectedTableAction === "coup" ? "Preparar Golpe" : "Usar habilidade";
     byId("action-prompt").textContent = mandatoryCoup
       ? "Com 10 ou mais moedas, você precisa dar um Golpe."
       : isOwnTurn ? "Colete uma moeda, use uma habilidade ou dê um Golpe." : "Você poderá agir quando o turno chegar.";
-    renderCharacterParameters();
+    if (selectedTableAction === "ability") renderCharacterParameters();
     return;
   }
   const actor = game.players.find((player) => player.id === claim.actorPlayerId);
@@ -381,9 +494,10 @@ function renderEffectChoice(game, pending) {
     `<option value="${card.instanceId}">${characterName(card.characterId)}</option>`,
   ).join("");
   if (pending.type === "andreia-offer") {
+    const ownsAndreia = game.ownHand.some(({ characterId }) => characterId === "andreia");
     byId("action-prompt").textContent = "O Golpe acertou. Você quer alegar Andreia para continuar?";
-    container.innerHTML = `<div class="action-row"><button id="andreia-use">Alegar Andreia</button><button id="andreia-skip" class="secondary">Encerrar turno</button></div>`;
-    byId("andreia-use").addEventListener("click", () => emit("andreia:respond", { use: true }));
+    container.innerHTML = `<div class="action-row">${ownsAndreia ? "" : '<button id="andreia-use">Blefar com Andreia</button>'}<button id="andreia-skip" class="secondary">Encerrar turno</button></div>`;
+    byId("andreia-use")?.addEventListener("click", () => emit("andreia:respond", { use: true }));
     byId("andreia-skip").addEventListener("click", () => emit("andreia:respond", { use: false }));
     return;
   } else if (pending.type === "andreia-coup") {
@@ -523,50 +637,6 @@ function costLabel(cost) {
   return "Sem custo";
 }
 
-function renderHistory(game) {
-  byId("revealed-list").innerHTML = game.revealedCards.length
-    ? [...game.revealedCards].reverse().map((entry) => {
-        const player = game.players.find(({ id }) => id === entry.playerId);
-        return `<li>${escapeHtml(player?.name ?? "Jogador")}: ${characterName(entry.characterId)} (${reasonName(entry.reason)})</li>`;
-      }).join("") : "<li>Nenhuma carta revelada.</li>";
-  byId("event-list").innerHTML = game.events.length
-    ? [...game.events].reverse().map((event) => `<li>${describeEvent(event, game.players)}</li>`).join("")
-    : "<li>A partida começou.</li>";
-}
-
-function describeEvent(event, players) {
-  const playerName = (id) => escapeHtml(players.find((player) => player.id === id)?.name ?? "Jogador");
-  if (event.type === "coins-collected") return `${playerName(event.playerId)} coletou 1 moeda.`;
-  if (event.type === "player-eliminated") return `${playerName(event.playerId)} foi eliminado.`;
-  if (event.type === "game-finished") return `${playerName(event.winnerPlayerId)} venceu.`;
-  if (event.type === "coup-resolved") return `${playerName(event.playerId)} golpeou ${playerName(event.targetPlayerId)} e ${event.hit ? "acertou" : "errou"} ${characterName(event.guessedCharacterId)}.`;
-  if (event.type === "character-claimed") return `${playerName(event.playerId)} alegou ${characterName(event.characterId)}.`;
-  if (event.type === "claim-challenged") return `${playerName(event.playerId)} desafiou ${playerName(event.actorPlayerId)}.`;
-  if (event.type === "challenge-passed") return `${playerName(event.playerId)} não desafiou.`;
-  if (event.type === "challenge-resolved") return event.claimWasTrue ? "A alegação era verdadeira." : "O blefe foi descoberto; a ação foi cancelada.";
-  if (event.type === "claim-unchallenged") return `A alegação de ${characterName(event.characterId)} não foi desafiada.`;
-  if (event.type === "dinosaur-placed") return `${playerName(event.playerId)} colocou um dinossaurinho em ${playerName(event.targetPlayerId)}.`;
-  if (event.type === "dinosaur-ate-coin") return `O dinossaurinho comeu uma moeda de ${playerName(event.playerId)}.`;
-  if (event.type === "cave-activated") return `${playerName(event.playerId)} protegeu as moedas na caverna.`;
-  if (event.type === "repository-changed") return `${playerName(event.playerId)} ${event.mode === "deposit" ? "guardou" : "retirou"} ${event.amount} moeda(s) do repositório.`;
-  if (event.type === "effect-expired") return `O efeito ${{ dinosaur:"do dinossaurinho", cave:"da caverna", ademar:"do Ademar" }[event.effectType] ?? event.effectType} terminou.`;
-  if (event.type === "socialism-applied") return `Socialismo: ${event.share} moeda(s) para cada participante e ${event.discarded} descartada(s).`;
-  if (event.type === "ademar-watching") return `${playerName(event.playerId)} está observando quem não ganhar moedas.`;
-  if (event.type === "ademar-stole") return `${playerName(event.playerId)} roubou ${event.takenAmount} moeda(s) de ${playerName(event.targetPlayerId)}.`;
-  if (event.type === "hands-swapped") return `${playerName(event.targetPlayerIds[0])} e ${playerName(event.targetPlayerIds[1])} trocaram suas mãos.`;
-  if (event.type === "sandra-exchanged") return `${playerName(event.playerId)} trocou uma carta com o baralho.`;
-  if (event.type === "altimar-replaced") return `${playerName(event.playerId)} rasgou uma carta de ${playerName(event.targetPlayerId)}.`;
-  if (event.type === "rodrigo-loan-created") return `${playerName(event.playerId)} emprestou 2 moedas para ${playerName(event.targetPlayerId)}.`;
-  if (event.type === "rodrigo-debt-paid") return `${playerName(event.targetPlayerId)} pagou ${event.amount} moedas para ${playerName(event.playerId)}.`;
-  if (event.type === "rodrigo-debt-escalated") return `A dívida de ${playerName(event.targetPlayerId)} subiu para 8 moedas.`;
-  if (event.type === "rodrigo-defaulted") return `${playerName(event.targetPlayerId)} não pagou a dívida final.`;
-  if (event.type === "marcelo-requirement-created") return `${playerName(event.playerId)} exigiu que ${playerName(event.targetPlayerId)} fique ${event.comparison === "gte" ? "com pelo menos" : "com no máximo"} ${event.threshold} moedas.`;
-  if (event.type === "marcelo-requirement-met") return `${playerName(event.targetPlayerId)} cumpriu o requisito.`;
-  if (event.type === "marcelo-coin-penalty") return `${playerName(event.targetPlayerId)} perdeu 2 moedas por não cumprir o requisito.`;
-  if (event.type === "marcelo-card-penalty") return `${playerName(event.targetPlayerId)} deverá perder uma carta.`;
-  return escapeHtml(event.type);
-}
-
 function opponentPosition(index, count) {
   if (count === 1) return { x: 50, y: 15, rotation: 0 };
   const angle = Math.PI + (Math.PI * index) / (count - 1);
@@ -604,7 +674,6 @@ function showMessage(text, isError = false) {
 function showError(text) { showMessage(text, true); }
 function characterName(id) { return CHARACTER_NAMES[id] ?? id; }
 function initials(name) { return String(name).split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(); }
-function reasonName(reason) { return { "coup-hit": "Golpe certo", "coup-miss": "Golpe errado", "proved-claim": "alegação provada", "failed-challenge": "desafio incorreto", "caught-bluff": "blefe descoberto" }[reason] ?? reason; }
 function escapeHtml(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function loadSocketClient(source) {
   if (window.io) return Promise.resolve();
@@ -624,7 +693,7 @@ function animateNewEvents(game) {
 
 function animateCoinTo(playerId) {
   const table = document.querySelector(".game-table");
-  const building = byId("cps-building");
+  const building = byId("collect-button");
   const target = playerId === room.selfPlayerId
     ? document.querySelector(".own-meta")
     : document.querySelector(`[data-player-id="${playerId}"]`);
