@@ -1,5 +1,7 @@
 "use strict";
 
+applyRandomAmbientColor();
+
 const CHARACTER_NAMES = {
   "jeff-dino": "Jeff Dino", altimar: "Altimar", silverio: "Silvério",
   ademar: "Ademar", "paula-granada": "Paula Granada",
@@ -14,18 +16,30 @@ let lastAnimatedEvent = 0;
 let selectedTableAction = null;
 const byId = (id) => document.getElementById(id);
 
+function applyRandomAmbientColor() {
+  const hue = Math.floor(Math.random() * 360);
+  const secondaryHue = (hue + 38 + Math.floor(Math.random() * 55)) % 360;
+  document.documentElement.style.setProperty("--ambient-hue", hue);
+  document.documentElement.style.setProperty("--ambient-secondary-hue", secondaryHue);
+}
+
 const configuredOnlineUrl = window.COUTEC_CONFIG?.onlineServerUrl ?? "";
-byId("online-connect-button").addEventListener("click", () =>
+bindPress(byId("online-connect-button"), () =>
   connect(configuredOnlineUrl),
 );
 byId("create-form").addEventListener("submit", createRoom);
 byId("join-form").addEventListener("submit", joinRoom);
-byId("start-button").addEventListener("click", () => emit("room:start", {}));
-byId("collect-button").addEventListener("click", () => {
+bindPress(byId("start-button"), () => emit("room:start", {}));
+bindPress(byId("collect-button"), () => {
+  const game = room?.game;
+  const self = game?.players.find(({ id }) => id === room.selfPlayerId);
+  if (!game || !self || game.currentPlayerId !== self.id) return showMessage("Aguarde: ainda não é a sua vez.");
+  if (game.pendingClaim || game.pendingReaction || game.pendingEffectChoice) return showMessage("Resolva a ação atual antes de coletar.");
+  if (self.coins >= 10) return showMessage("Com 10 moedas, você precisa dar um Golpe.");
   selectedTableAction = null;
   emit("action:collect", {});
 });
-byId("claim-button").addEventListener("click", () => {
+bindPress(byId("claim-button"), () => {
   emit("action:declare-character", {
     characterId: byId("claim-character").value,
     parameters: readCharacterParameters(),
@@ -35,26 +49,26 @@ byId("claim-character").addEventListener("change", () => {
   renderCharacterParameters();
   updateClaimButton();
 });
-byId("challenge-button").addEventListener("click", () =>
+bindPress(byId("challenge-button"), () =>
   emit("challenge:contest", {}),
 );
-byId("resolve-claim-button").addEventListener("click", () =>
+bindPress(byId("resolve-claim-button"), () =>
   emit("challenge:pass", {}),
 );
-byId("reaction-claim-button").addEventListener("click", () => emit("reaction:claim", {}));
-byId("reaction-pass-button").addEventListener("click", () => emit("reaction:pass", {}));
-byId("pool-button").addEventListener("click", () => byId("pool-dialog").showModal());
-byId("close-pool").addEventListener("click", () => byId("pool-dialog").close());
-byId("bluff-button").addEventListener("click", openBluffPanel);
-byId("coup-button").addEventListener("click", openCoupPanel);
-byId("close-action-console").addEventListener("click", closeActionConsole);
-byId("confirm-coup-button").addEventListener("click", () => {
+bindPress(byId("reaction-claim-button"), () => emit("reaction:claim", {}));
+bindPress(byId("reaction-pass-button"), () => emit("reaction:pass", {}));
+bindPress(byId("pool-button"), () => byId("pool-dialog").showModal());
+bindPress(byId("close-pool"), () => byId("pool-dialog").close());
+bindPress(byId("bluff-button"), openBluffPanel);
+bindPress(byId("coup-button"), openCoupPanel);
+bindPress(byId("close-action-console"), closeActionConsole);
+bindPress(byId("confirm-coup-button"), () => {
   emit("action:coup", {
     targetPlayerId: byId("coup-target").value,
     guessedCharacterId: byId("coup-character").value,
   });
 });
-byId("copy-code").addEventListener("click", async () => {
+bindPress(byId("copy-code"), async () => {
   await navigator.clipboard.writeText(room.id);
   showMessage("Código copiado.");
 });
@@ -212,13 +226,13 @@ function renderOwnHand(game) {
   const self = game.players.find(({ id }) => id === room.selfPlayerId);
   byId("own-hand").innerHTML = game.ownHand.length
     ? game.ownHand.map((card, index) => `
-      <button type="button" class="card ${canActivateOwnedCard(game, self, card) ? "card-ready" : "card-inactive"}" ${canActivateOwnedCard(game, self, card) ? "" : "disabled"} data-use-character="${card.characterId}" data-initial="${characterName(card.characterId).charAt(0)}"
+      <button type="button" class="card ${canActivateOwnedCard(game, self, card) ? "card-ready" : "card-inactive"}" aria-disabled="${!canActivateOwnedCard(game, self, card)}" data-use-character="${card.characterId}" data-initial="${characterName(card.characterId).charAt(0)}"
         style="--card-rotation:${index ? 5 : -5}deg;--card-y:${index ? "0" : "5px"}">
         <span>${characterName(card.characterId)}</span>
       </button>`).join("")
     : '<p class="muted">Você não possui mais influência.</p>';
   for (const cardButton of byId("own-hand").querySelectorAll("[data-use-character]")) {
-    cardButton.addEventListener("click", () => activateOwnedCard(cardButton.dataset.useCharacter));
+    bindPress(cardButton, () => activateOwnedCard(cardButton.dataset.useCharacter));
   }
 }
 
@@ -275,7 +289,16 @@ function activateOwnedCard(characterId) {
   if (!game) return;
   const self = game.players.find(({ id }) => id === room.selfPlayerId);
   const card = game.ownHand.find(({ characterId: id }) => id === characterId);
-  if (!card || !canActivateOwnedCard(game, self, card)) return;
+  if (!card) return;
+  if (!canActivateOwnedCard(game, self, card)) {
+    if (game.currentPlayerId !== self.id && !game.pendingReaction && game.pendingEffectChoice?.type !== "andreia-offer") {
+      return showMessage("Esta carta poderá ser usada no seu turno.");
+    }
+    if (["andreia", "robertinho", "ze"].includes(characterId)) {
+      return showMessage(`${characterName(characterId)} só pode ser usada no momento especial da carta.`);
+    }
+    return showMessage("Esta habilidade não está disponível agora ou faltam moedas.");
+  }
   if (game.pendingReaction?.type === characterId) {
     emit("reaction:claim", {});
     return;
@@ -363,7 +386,10 @@ function renderControls(game, self, isOwnTurn) {
   byId("coup-target").innerHTML = targets.map((player) =>
     `<option value="${player.id}">${escapeHtml(player.name)}</option>`,
   ).join("");
-  byId("collect-button").disabled = !isOwnTurn || self.eliminated || self.coins >= 10;
+  const canCollect = isOwnTurn && !self.eliminated && self.coins < 10 && !blockingInteraction;
+  byId("collect-button").disabled = false;
+  byId("collect-button").setAttribute("aria-disabled", String(!canCollect));
+  byId("collect-button").classList.toggle("action-unavailable", !canCollect);
   byId("claim-button").dataset.baseDisabled = String(!isOwnTurn || self.eliminated);
   updateClaimButton();
   byId("coup-button").disabled = !isOwnTurn || self.eliminated || self.coins < 7 || !targets.length;
@@ -420,7 +446,7 @@ function renderControls(game, self, isOwnTurn) {
       `<button data-instance-id="${card.instanceId}">${characterName(card.characterId)}</button>`,
     ).join("");
     for (const button of byId("loss-card-buttons").querySelectorAll("button")) {
-      button.addEventListener("click", () =>
+      bindPress(button, () =>
         emit("challenge:choose-loss", { instanceId: button.dataset.instanceId }),
       );
     }
@@ -497,14 +523,14 @@ function renderEffectChoice(game, pending) {
     const ownsAndreia = game.ownHand.some(({ characterId }) => characterId === "andreia");
     byId("action-prompt").textContent = "O Golpe acertou. Você quer alegar Andreia para continuar?";
     container.innerHTML = `<div class="action-row">${ownsAndreia ? "" : '<button id="andreia-use">Blefar com Andreia</button>'}<button id="andreia-skip" class="secondary">Encerrar turno</button></div>`;
-    byId("andreia-use")?.addEventListener("click", () => emit("andreia:respond", { use: true }));
-    byId("andreia-skip").addEventListener("click", () => emit("andreia:respond", { use: false }));
+    if (byId("andreia-use")) bindPress(byId("andreia-use"), () => emit("andreia:respond", { use: true }));
+    bindPress(byId("andreia-skip"), () => emit("andreia:respond", { use: false }));
     return;
   } else if (pending.type === "andreia-coup") {
     const targets = game.players.filter(({ eliminated, id }) => !eliminated && id !== room.selfPlayerId);
     container.innerHTML = `<p>Andreia liberou um Golpe gratuito.</p><div class="coup-controls"><label>Alvo<select id="choice-target">${targets.map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("")}</select></label><label>Palpite<select id="choice-character"></select></label><button id="complete-effect" class="danger">Golpe grátis</button></div>`;
     fillCharacterSelect(byId("choice-character"), game.characterPool);
-    byId("complete-effect").addEventListener("click", () => emit("andreia:coup", { targetPlayerId: byId("choice-target").value, guessedCharacterId: byId("choice-character").value }));
+    bindPress(byId("complete-effect"), () => emit("andreia:coup", { targetPlayerId: byId("choice-target").value, guessedCharacterId: byId("choice-character").value }));
     return;
   } else if (pending.type === "wave-action") {
     renderForcedWaveAction(game, pending, container);
@@ -526,17 +552,17 @@ function renderEffectChoice(game, pending) {
   } else if (pending.type === "robertinho-swap") {
     container.innerHTML = `<p>Escolha uma carta sua para trocar pela carta usada pelo alvo:</p><div class="loss-card-buttons">${game.ownHand.map((card) => `<button data-robertinho-card="${card.instanceId}">${characterName(card.characterId)}</button>`).join("")}</div>`;
     for (const button of container.querySelectorAll("[data-robertinho-card]")) {
-      button.addEventListener("click", () => emit("effect:choose", { ownInstanceId: button.dataset.robertinhoCard }));
+      bindPress(button, () => emit("effect:choose", { ownInstanceId: button.dataset.robertinhoCard }));
     }
     return;
   } else {
     container.innerHTML = `<p>Você não possui 2 moedas. Escolha uma influência para perder:</p><div class="loss-card-buttons">${game.ownHand.map((card) => `<button data-own-instance="${card.instanceId}">${characterName(card.characterId)}</button>`).join("")}</div>`;
     for (const button of container.querySelectorAll("[data-own-instance]")) {
-      button.addEventListener("click", () => emit("effect:choose", { ownInstanceId: button.dataset.ownInstance }));
+      bindPress(button, () => emit("effect:choose", { ownInstanceId: button.dataset.ownInstance }));
     }
     return;
   }
-  byId("complete-effect").addEventListener("click", () => {
+  bindPress(byId("complete-effect"), () => {
     const payload = { deckInstanceId: byId("choice-deck-card").value };
     if (pending.type === "sandra") payload.ownInstanceId = byId("choice-own-card").value;
     else if (pending.type === "altimar") {
@@ -553,13 +579,13 @@ function renderForcedWaveAction(game, pending, container) {
   const allowedTargets = game.players.filter(({ eliminated, id }) => !eliminated && id !== room.selfPlayerId && id !== pending.actorPlayerId);
   if (pending.forcedAction === "collect") {
     container.innerHTML = `<p>O Wave obrigou você a coletar uma moeda.</p><button id="wave-complete">Coletar moeda</button>`;
-    byId("wave-complete").addEventListener("click", () => emit("wave:collect", {}));
+    bindPress(byId("wave-complete"), () => emit("wave:collect", {}));
     return;
   }
   if (pending.forcedAction === "coup") {
     container.innerHTML = `<p>O Wave obrigou você a dar um Golpe. O usuário do Wave não pode ser o alvo.</p><div class="coup-controls"><label>Alvo<select id="choice-target">${allowedTargets.map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("")}</select></label><label>Palpite<select id="choice-character"></select></label><button id="wave-complete" class="danger">Dar Golpe</button></div>`;
     fillCharacterSelect(byId("choice-character"), game.characterPool);
-    byId("wave-complete").addEventListener("click", () => emit("wave:coup", { targetPlayerId: byId("choice-target").value, guessedCharacterId: byId("choice-character").value }));
+    bindPress(byId("wave-complete"), () => emit("wave:coup", { targetPlayerId: byId("choice-target").value, guessedCharacterId: byId("choice-character").value }));
     return;
   }
   const choices = game.characters.filter(({ id, implemented }) => implemented && id !== "andreia");
@@ -574,7 +600,7 @@ function renderForcedWaveAction(game, pending, container) {
   };
   byId("forced-character").addEventListener("change", renderParameters);
   renderParameters();
-  byId("wave-complete").addEventListener("click", () => {
+  bindPress(byId("wave-complete"), () => {
     const id = byId("forced-character").value;
     let parameters = {};
     if (["jeff-dino", "rodrigo"].includes(id)) parameters = { targetPlayerId: byId("forced-target").value };
@@ -675,6 +701,27 @@ function showError(text) { showMessage(text, true); }
 function characterName(id) { return CHARACTER_NAMES[id] ?? id; }
 function initials(name) { return String(name).split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(); }
 function escapeHtml(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
+function bindPress(element, handler) {
+  let touchStart = null;
+  let lastPointerActivation = 0;
+  element.addEventListener("pointerdown", (event) => {
+    if (event.pointerType !== "mouse") touchStart = { x: event.clientX, y: event.clientY };
+  }, { passive: true });
+  element.addEventListener("pointerup", (event) => {
+    if (event.pointerType === "mouse" || !touchStart) return;
+    const moved = Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y);
+    touchStart = null;
+    if (moved > 12) return;
+    event.preventDefault();
+    lastPointerActivation = Date.now();
+    handler(event);
+  });
+  element.addEventListener("pointercancel", () => { touchStart = null; });
+  element.addEventListener("click", (event) => {
+    if (Date.now() - lastPointerActivation < 600) return;
+    handler(event);
+  });
+}
 function loadSocketClient(source) {
   if (window.io) return Promise.resolve();
   return new Promise((resolve, reject) => {
