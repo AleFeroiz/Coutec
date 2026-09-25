@@ -214,7 +214,8 @@ function renderGame() {
   byId("winner-text").textContent = game.winnerPlayerId
     ? `${game.players.find((player) => player.id === game.winnerPlayerId)?.name} venceu!`
     : "";
-  byId("own-coins").innerHTML = `${self.coins} moeda(s) ${self.repositoryCoins > 0 ? `<span class="repository-cloud">☁ ${self.repositoryCoins}</span>` : ""} ${effectBadges(game, self)}`;
+  byId("own-coins").innerHTML = `${self.repositoryCoins > 0 ? `<span class="repository-cloud">☁ ${self.repositoryCoins}</span>` : ""} ${effectBadges(game, self)}`;
+  byId("own-coin-pile").innerHTML = coinPileMarkup(game, self);
   renderOwnHand(game);
   renderOpponents(game);
   renderControls(game, self, isOwnTurn);
@@ -250,9 +251,9 @@ function renderOpponents(game) {
     return `<article data-player-id="${player.id}" class="player-tile ${player.id === game.currentPlayerId ? "current" : ""} ${player.eliminated ? "eliminated" : ""}"
       style="--x:${position.x}%;--y:${position.y}%;--seat-angle:${position.rotation}deg">
       <div class="effect-badges">${effects}</div>
-      <div class="card-backs">${backs}</div>
+      <div class="opponent-hand-zone"><div class="card-backs">${backs}</div>${coinPileMarkup(game, player)}</div>
       <div class="player-info"><div class="player-avatar">${initials(player.name)}</div><div><strong>${escapeHtml(player.name)}</strong>
-      <div class="player-stats"><span>● ${player.coins}</span><span>▣ ${player.handSize}</span></div>${repository}</div></div>
+      <div class="player-stats"><span>▣ ${player.handSize}</span></div>${repository}</div></div>
     </article>`;
   }).join("");
 }
@@ -635,12 +636,22 @@ function effectBadges(game, player) {
     (effect.type === "ademar" && effect.sourcePlayerId === player.id),
   ).map((effect) => {
     if (effect.type === "dinosaur") return '<span class="dinosaur-effect" title="Dinossaurinho: come 1 moeda de cada ganho">🦖</span>';
-    if (effect.type === "cave") return '<span class="cave-effect" title="Moedas protegidas">⛰</span>';
+    if (effect.type === "cave") return "";
     if (effect.type === "ademar") return '<span class="ademar-effect" title="Ademar está observando quem não ganha moedas">👀</span>';
     if (effect.type === "rodrigo-debt") return `<span class="ademar-effect" title="Dívida: ${effect.amountDue} moedas">💸</span>`;
     if (effect.type === "marcelo-requirement") return `<span class="ademar-effect" title="Requisito ${effect.comparison === "gte" ? "≥" : "≤"} ${effect.threshold}">📋</span>`;
     return "";
   }).join("");
+}
+
+function coinPileMarkup(game, player) {
+  const protectedByCave = game.activeEffects.some(
+    ({ type, targetPlayerId }) => type === "cave" && targetPlayerId === player.id,
+  );
+  return `<div class="coin-pile ${protectedByCave ? "protected-coins" : ""}" title="${player.coins} moeda(s)${protectedByCave ? " protegidas pela caverna" : ""}">
+    <span class="coin-disc coin-one">●</span><span class="coin-disc coin-two">●</span><span class="coin-disc coin-three">●</span>
+    <strong>${player.coins}</strong>${protectedByCave ? '<span class="coin-cave" aria-label="Moedas protegidas pela caverna"></span>' : ""}
+  </div>`;
 }
 
 function updateChallengeTimer() {
@@ -704,11 +715,12 @@ function escapeHtml(value) { return String(value).replaceAll("&", "&amp;").repla
 function bindPress(element, handler) {
   let touchStart = null;
   let lastPointerActivation = 0;
+  let lastTouchActivation = 0;
   element.addEventListener("pointerdown", (event) => {
     if (event.pointerType !== "mouse") touchStart = { x: event.clientX, y: event.clientY };
   }, { passive: true });
   element.addEventListener("pointerup", (event) => {
-    if (event.pointerType === "mouse" || !touchStart) return;
+    if (event.pointerType === "mouse" || event.pointerType === "touch" || !touchStart) return;
     const moved = Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y);
     touchStart = null;
     if (moved > 12) return;
@@ -717,8 +729,23 @@ function bindPress(element, handler) {
     handler(event);
   });
   element.addEventListener("pointercancel", () => { touchStart = null; });
+  element.addEventListener("touchstart", (event) => {
+    const touch = event.changedTouches[0];
+    if (touch) touchStart = { x: touch.clientX, y: touch.clientY };
+  }, { passive: true });
+  element.addEventListener("touchend", (event) => {
+    const touch = event.changedTouches[0];
+    if (!touch || !touchStart) return;
+    const moved = Math.hypot(touch.clientX - touchStart.x, touch.clientY - touchStart.y);
+    touchStart = null;
+    if (moved > 12) return;
+    event.preventDefault();
+    lastTouchActivation = Date.now();
+    handler(event);
+  }, { passive: false });
+  element.addEventListener("touchcancel", () => { touchStart = null; });
   element.addEventListener("click", (event) => {
-    if (Date.now() - lastPointerActivation < 600) return;
+    if (Date.now() - lastPointerActivation < 600 || Date.now() - lastTouchActivation < 600) return;
     handler(event);
   });
 }
