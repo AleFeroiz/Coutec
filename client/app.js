@@ -63,7 +63,7 @@ bindPress(byId("resolve-claim-button"), () =>
 );
 bindPress(byId("reaction-claim-button"), () => emit("reaction:claim", {}));
 bindPress(byId("reaction-pass-button"), () => emit("reaction:pass", {}));
-bindPress(byId("pool-button"), () => byId("pool-dialog").showModal());
+bindPress(byId("pool-button"), openPoolDialog);
 bindPress(byId("close-pool"), () => byId("pool-dialog").close());
 bindPress(byId("leave-game-button"), () => {
   if (!window.confirm("Sair da partida agora? Você será removido imediatamente.")) return;
@@ -853,9 +853,21 @@ function renderPool(game) {
   if (shownPoolRoomId !== room.id) {
     shownPoolRoomId = room.id;
     setTimeout(() => {
-      if (!byId("pool-dialog").open) byId("pool-dialog").showModal();
+      openPoolDialog();
     }, 250);
   }
+}
+
+function openPoolDialog() {
+  const dialog = byId("pool-dialog");
+  if (dialog.open) return;
+  // Um <dialog> modal invisível permanece na top layer e bloqueia todos os
+  // toques. Nunca o abra se alguma regra responsiva voltar a ocultá-lo.
+  if (getComputedStyle(dialog).display === "none") {
+    showError("Não foi possível abrir os personagens nesta resolução.");
+    return;
+  }
+  dialog.showModal();
 }
 
 function effectBadges(game, player) {

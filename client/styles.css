@@ -109,7 +109,6 @@ dialog::backdrop { background:#07100bc4; backdrop-filter:blur(5px); }
 @keyframes impact-pop { to { opacity:0; transform:scale(3); } }
 @media (max-width:720px) {
   .shell { width:min(100% - .75rem,1100px); padding-top:1rem; }
-  #game-view + * { display:none; }
   .game-table { min-height:720px; border-radius:24px; }
   .table-center { width:92%; top:47%; }
   .player-tile { width:118px; font-size:.78rem; }
