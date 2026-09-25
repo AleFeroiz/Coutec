@@ -14,8 +14,8 @@
         <h1>COUTEC</h1>
         <p class="subtitle">Blefe, dedução e influência acadêmica.</p>
       </header>
-      <div id="connection-status" class="status">Desconectado</div>
-      <div id="message" class="message" hidden></div>
+      <div id="connection-status" class="status" role="status" aria-live="polite">Desconectado</div>
+      <div id="message" class="message" role="alert" aria-live="assertive" hidden></div>
 
       <section id="connection-view" class="panel">
         <div class="connection-heading">
@@ -28,22 +28,25 @@
 
       <section id="home-view" class="grid two-columns" hidden>
         <form id="create-form" class="panel">
-          <h2>Criar sala</h2>
-          <label>Seu nome <input name="playerName" required maxlength="24" /></label>
-          <div class="compact-grid">
-            <label>Personagens <input name="poolSize" type="number" min="1" max="14" value="5" required /></label>
-            <label>Cópias <input name="copiesPerCharacter" type="number" min="1" value="3" required /></label>
-            <label>Moedas iniciais <input name="initialCoins" type="number" min="0" value="0" required /></label>
-            <label>Tempo de desafio <input name="challengeSeconds" type="number" min="1" value="5" required /></label>
-          </div>
-          <label>Banidos (IDs separados por vírgula) <input name="bannedCharacters" placeholder="wave, altimar" /></label>
-          <button type="submit">Criar sala</button>
+          <div class="form-heading"><span class="form-icon" aria-hidden="true">＋</span><div><h2>Criar sala</h2><p>Você configura e convida os jogadores.</p></div></div>
+          <label>Como devemos chamar você? <input name="playerName" required maxlength="24" autocomplete="nickname" placeholder="Seu nome" /></label>
+          <details class="room-settings">
+            <summary>Configurações da partida <span>Opcional</span></summary>
+            <div class="compact-grid">
+              <label>Personagens no baralho <input name="poolSize" type="number" min="1" max="14" value="5" required /></label>
+              <label>Cópias de cada carta <input name="copiesPerCharacter" type="number" min="1" value="3" required /></label>
+              <label>Moedas iniciais <input name="initialCoins" type="number" min="0" value="0" required /></label>
+              <label>Segundos para desafiar <input name="challengeSeconds" type="number" min="1" value="5" required /></label>
+            </div>
+            <label>Personagens banidos <input name="bannedCharacters" placeholder="Ex.: wave, altimar" /><small>Use os nomes separados por vírgula.</small></label>
+          </details>
+          <button type="submit" class="primary-action">Criar sala</button>
         </form>
         <form id="join-form" class="panel">
-          <h2>Entrar em sala</h2>
-          <label>Seu nome <input name="playerName" required maxlength="24" /></label>
-          <label>Código <input name="roomId" required maxlength="6" class="room-input" /></label>
-          <button type="submit">Entrar</button>
+          <div class="form-heading"><span class="form-icon" aria-hidden="true">→</span><div><h2>Entrar em sala</h2><p>Use o código enviado pelo host.</p></div></div>
+          <label>Como devemos chamar você? <input name="playerName" required maxlength="24" autocomplete="nickname" placeholder="Seu nome" /></label>
+          <label>Código da sala <input name="roomId" required minlength="6" maxlength="6" class="room-input" autocomplete="off" inputmode="text" placeholder="ABC123" /></label>
+          <button type="submit" class="primary-action">Entrar na sala</button>
         </form>
       </section>
 
@@ -52,11 +55,11 @@
           <div><span class="eyebrow">Sala</span><h2 id="room-code"></h2></div>
           <button id="copy-code" class="secondary">Copiar código</button>
         </div>
-        <p id="room-config"></p>
+        <p id="room-config" class="room-summary"></p>
         <h3>Jogadores</h3>
         <ul id="lobby-players" class="player-list"></ul>
-        <button id="start-button" hidden>Iniciar partida</button>
-        <p id="waiting-host" class="muted">Aguardando o host iniciar.</p>
+        <button id="start-button" class="primary-action" hidden>Iniciar partida</button>
+        <p id="waiting-host" class="muted waiting-note">Aguardando o host iniciar a partida…</p>
       </section>
 
       <section id="game-view" hidden>
@@ -74,13 +77,13 @@
               <p id="action-prompt" class="muted"></p>
 
               <div id="normal-actions">
-                <button id="collect-button">+1 moeda</button>
+                <button id="collect-button" class="collect-action">● Coletar 1 moeda</button>
                 <div class="action-row">
                   <label>Personagem <select id="claim-character"></select></label>
-                  <button id="claim-button">Alegar habilidade</button>
+                  <button id="claim-button">Usar habilidade</button>
                 </div>
                 <div id="character-parameters"></div>
-                <p class="prototype-note">Escolha uma habilidade disponível no pool da partida.</p>
+                <p id="claim-help" class="prototype-note">Escolha uma habilidade disponível no pool da partida.</p>
                 <div class="coup-controls">
                   <label>Alvo <select id="coup-target"></select></label>
                   <label>Palpite <select id="coup-character"></select></label>

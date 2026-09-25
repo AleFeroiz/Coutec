@@ -55,12 +55,16 @@ byId("copy-code").addEventListener("click", async () => {
 async function connect(rawServerUrl) {
   const serverUrl = rawServerUrl.trim().replace(/\/$/, "");
   if (!serverUrl) return showError("O servidor online ainda não foi configurado.");
+  const connectButton = byId("online-connect-button");
+  connectButton.disabled = true;
+  connectButton.textContent = "Conectando…";
   byId("connection-status").textContent = "Conectando ao servidor online…";
   try {
     await loadSocketClient(`${serverUrl}/socket.io/socket.io.js`);
     socket?.disconnect();
     socket = window.io(serverUrl);
     socket.on("connect", () => {
+      connectButton.textContent = "Conectado";
       byId("connection-status").textContent = "Conectado";
       byId("connection-status").classList.add("connected");
       const savedSession = readSavedSession();
@@ -77,7 +81,11 @@ async function connect(rawServerUrl) {
         showOnly("home-view");
       }
     });
-    socket.on("connect_error", () => showError("Não foi possível conectar."));
+    socket.on("connect_error", () => {
+      connectButton.disabled = false;
+      connectButton.textContent = "Tentar novamente";
+      showError("Não foi possível conectar. O servidor pode estar acordando; tente novamente em alguns segundos.");
+    });
     socket.on("disconnect", () => {
       byId("connection-status").textContent = "Desconectado";
       byId("connection-status").classList.remove("connected");
@@ -92,6 +100,8 @@ async function connect(rawServerUrl) {
       }
     });
   } catch (_error) {
+    connectButton.disabled = false;
+    connectButton.textContent = "Tentar novamente";
     showError("Não foi possível carregar o Socket.IO desse servidor.");
   }
 }
@@ -152,13 +162,16 @@ function renderLobby() {
   document.body.classList.remove("in-game");
   showOnly("lobby-view");
   byId("room-code").textContent = room.id;
-  byId("room-config").textContent = `${room.config.poolSize} personagens × ${room.config.copiesPerCharacter} cópias · ${room.config.initialCoins} moedas iniciais`;
+  byId("room-config").textContent = `${room.players.length} jogador(es) · ${room.config.poolSize} personagens × ${room.config.copiesPerCharacter} cópias · ${room.config.initialCoins} moedas iniciais`;
   byId("lobby-players").innerHTML = room.players.map((player) =>
-    `<li>${escapeHtml(player.name)}${player.id === room.hostPlayerId ? " — host" : ""}</li>`,
+    `<li><span class="player-list-avatar">${initials(player.name)}</span><strong>${escapeHtml(player.name)}</strong>${player.id === room.hostPlayerId ? '<span class="host-badge">Host</span>' : ""}</li>`,
   ).join("");
   const isHost = room.selfPlayerId === room.hostPlayerId;
   byId("start-button").hidden = !isHost;
   byId("start-button").disabled = room.players.length < 2;
+  byId("start-button").textContent = room.players.length < 2
+    ? "Aguardando mais 1 jogador…"
+    : `Iniciar partida com ${room.players.length} jogadores`;
   byId("waiting-host").hidden = isHost;
 }
 
@@ -172,6 +185,7 @@ function renderGame() {
   }
   const current = game.players.find((player) => player.id === game.currentPlayerId);
   const isOwnTurn = game.currentPlayerId === room.selfPlayerId;
+  document.body.classList.toggle("is-own-turn", isOwnTurn);
   byId("game-room-code").textContent = room.id;
   byId("turn-text").textContent = current
     ? (isOwnTurn ? "É a sua vez" : `Vez de ${current.name}`)
@@ -210,7 +224,7 @@ function renderOpponents(game) {
       ? `<span class="repository-cloud" title="Moedas no repositório">☁ ${player.repositoryCoins}</span>`
       : "";
     return `<article data-player-id="${player.id}" class="player-tile ${player.id === game.currentPlayerId ? "current" : ""} ${player.eliminated ? "eliminated" : ""}"
-      style="--x:${position.x}%;--y:${position.y}%">
+      style="--x:${position.x}%;--y:${position.y}%;--seat-angle:${position.rotation}deg">
       <div class="effect-badges">${effects}</div>
       <div class="card-backs">${backs}</div>
       <div class="player-info"><div class="player-avatar">${initials(player.name)}</div><div><strong>${escapeHtml(player.name)}</strong>
@@ -265,8 +279,13 @@ function renderControls(game, self, isOwnTurn) {
       renderEffectChoice(game, effectChoice);
       return;
     }
-    byId("action-title").textContent = isOwnTurn ? "Escolha sua ação" : "Aguardando jogada";
-    byId("action-prompt").textContent = isOwnTurn ? "Use a mesa para agir." : "As ações aparecerão aqui.";
+    const mandatoryCoup = isOwnTurn && self.coins >= 10;
+    byId("action-title").textContent = mandatoryCoup
+      ? "Golpe obrigatório"
+      : isOwnTurn ? "Sua vez: escolha uma ação" : `Aguardando ${game.players.find(({ id }) => id === game.currentPlayerId)?.name ?? "jogador"}`;
+    byId("action-prompt").textContent = mandatoryCoup
+      ? "Com 10 ou mais moedas, você precisa dar um Golpe."
+      : isOwnTurn ? "Colete uma moeda, use uma habilidade ou dê um Golpe." : "Você poderá agir quando o turno chegar.";
     renderCharacterParameters();
     return;
   }
@@ -299,6 +318,10 @@ function renderCharacterParameters() {
   if (!room?.game || room.game.pendingClaim) return;
   const characterId = byId("claim-character").value;
   const container = byId("character-parameters");
+  const selectedCharacter = room.game.characters?.find(({ id }) => id === characterId);
+  byId("claim-help").textContent = selectedCharacter
+    ? `${costLabel(selectedCharacter.cost)} · ${selectedCharacter.effect}`
+    : "Escolha uma habilidade disponível no pool da partida.";
   const activePlayers = room.game.players.filter(({ eliminated }) => !eliminated);
   if (characterId === "jeff-dino") {
     container.innerHTML = `<label>Alvo do dinossaurinho<select id="effect-target">${activePlayers.map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("")}</select></label>`;
@@ -545,9 +568,15 @@ function describeEvent(event, players) {
 }
 
 function opponentPosition(index, count) {
-  if (count === 1) return { x: 50, y: 15 };
+  if (count === 1) return { x: 50, y: 15, rotation: 0 };
   const angle = Math.PI + (Math.PI * index) / (count - 1);
-  return { x: 50 + Math.cos(angle) * 39, y: 43 + Math.sin(angle) * 30 };
+  const x = 50 + Math.cos(angle) * 39;
+  const y = 43 + Math.sin(angle) * 30;
+  return {
+    x,
+    y,
+    rotation: Math.max(-34, Math.min(34, (50 - x) * 0.87)),
+  };
 }
 function fillCharacterSelect(select, ids) {
   select.innerHTML = ids.map((id) => `<option value="${id}">${characterName(id)}</option>`).join("");
