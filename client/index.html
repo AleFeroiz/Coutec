@@ -38,9 +38,6 @@
               <h3>Online</h3>
               <p>Conecte ao motor publicado na Render para jogar pela internet.</p>
             </div>
-            <label>Servidor online
-              <input id="server-url" type="url" placeholder="https://seu-servidor.onrender.com" />
-            </label>
             <button id="online-connect-button">Jogar online</button>
           </article>
         </div>
@@ -118,6 +115,12 @@
               <div id="loss-actions" hidden>
                 <p>Escolha uma das suas cartas para perder:</p>
                 <div id="loss-card-buttons" class="loss-card-buttons"></div>
+              </div>
+              <div id="reaction-actions" hidden>
+                <div id="reaction-description" class="claim-badge"></div>
+                <strong id="reaction-timer"></strong>
+                <button id="reaction-claim-button">Usar carta</button>
+                <button id="reaction-pass-button" class="secondary">Não usar</button>
               </div>
               <div id="effect-choice-actions" hidden></div>
             </section>

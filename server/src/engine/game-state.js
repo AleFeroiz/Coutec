@@ -47,6 +47,7 @@ function createGameState({ config, players, rng = Math.random }) {
     revealedCards: [],
     events: [],
     pendingClaim: null,
+    pendingReaction: null,
     activeEffects: [],
     nextEffectId: 1,
     pendingEffectChoice: null,

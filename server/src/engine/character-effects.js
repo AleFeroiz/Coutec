@@ -6,7 +6,7 @@ const { GameRuleError } = require("./errors");
 const IMPLEMENTED_CHARACTERS = new Set([
   "jeff-dino", "silverio", "deivison", "paula-granada", "ademar",
   "sandra", "altimar", "luis-sapeca",
-  "rodrigo", "marcelo-moreira",
+  "rodrigo", "marcelo-moreira", "andreia", "wave", "robertinho", "ze",
 ]);
 
 function prepareCharacterAction(state, { playerId, characterId, parameters = {} }) {
@@ -147,6 +147,52 @@ function executeCharacterEffect(state, claim) {
       threshold: parameters.threshold,
       comparison: parameters.comparison,
     });
+  } else if (characterId === "andreia") {
+    state.pendingEffectChoice = {
+      type: "andreia-coup",
+      actorPlayerId: player.id,
+    };
+    record(state, { type: "andreia-free-coup-ready", playerId: player.id });
+    return false;
+  } else if (characterId === "wave") {
+    state.pendingEffectChoice = {
+      type: "wave-action",
+      actorPlayerId: player.id,
+      targetPlayerId: parameters.targetPlayerId,
+      forcedAction: parameters.forcedAction,
+    };
+    record(state, {
+      type: "wave-action-forced",
+      playerId: player.id,
+      targetPlayerId: parameters.targetPlayerId,
+      forcedAction: parameters.forcedAction,
+    });
+    return false;
+  } else if (characterId === "ze") {
+    addEffect(state, {
+      type: "ze-delayed-action",
+      sourcePlayerId: player.id,
+      targetPlayerId: claim.reactionContext.actionClaim.actorPlayerId,
+      nextCheckAtStartOfPlayerId: player.id,
+      actionClaim: claim.reactionContext.actionClaim,
+    });
+    record(state, { type: "ze-action-delayed", playerId: player.id, targetPlayerId: claim.reactionContext.actionClaim.actorPlayerId });
+  } else if (characterId === "robertinho") {
+    const original = claim.reactionContext.actionClaim;
+    const target = getActivePlayer(state, original.actorPlayerId);
+    const targetCard = target.hand.find(({ characterId: id }) => id === original.characterId);
+    if (!targetCard) {
+      record(state, { type: "robertinho-no-card", playerId: player.id, targetPlayerId: target.id });
+      return true;
+    }
+    state.pendingEffectChoice = {
+      type: "robertinho-swap",
+      actorPlayerId: player.id,
+      targetPlayerId: target.id,
+      targetCardInstanceId: targetCard.instanceId,
+    };
+    record(state, { type: "robertinho-swap-ready", playerId: player.id, targetPlayerId: target.id });
+    return false;
   }
   return true;
 }
@@ -271,12 +317,26 @@ function validateParameters(state, player, characterId, parameters) {
       throw new GameRuleError("Escolha maior/igual ou menor/igual.", "INVALID_REQUIREMENT_COMPARISON");
     }
   }
+  if (characterId === "wave") {
+    const target = getActivePlayer(state, parameters.targetPlayerId);
+    if (target.id === player.id) {
+      throw new GameRuleError("Escolha outro jogador para o Wave.", "SELF_TARGETED_EFFECT");
+    }
+    if (!["collect", "character", "coup"].includes(parameters.forcedAction)) {
+      throw new GameRuleError("Escolha uma ação váida para o Wave.", "INVALID_FORCED_ACTION");
+    }
+    if (parameters.forcedAction === "coup" && target.coins < 7) {
+      throw new GameRuleError("O alvo não possui moedas para o Golpe.", "FORCED_PLAYER_CANNOT_PAY");
+    }
+  }
 }
 
 function applyCharacterChoice(state, { playerId, choice }) {
   const pending = state.pendingEffectChoice;
   const choicePlayerId = pending?.type === "marcelo-loss"
     ? pending.targetPlayerId
+    : pending?.type === "wave-action"
+      ? pending.targetPlayerId
     : pending?.actorPlayerId;
   if (!pending || choicePlayerId !== playerId) {
     throw new GameRuleError("Não há uma escolha disponível para você.", "NO_EFFECT_CHOICE");
@@ -321,9 +381,24 @@ function applyCharacterChoice(state, { playerId, choice }) {
     const index = target.hand.findIndex(({ instanceId }) => instanceId === choice.ownInstanceId);
     if (index === -1) throw new GameRuleError("Escolha uma carta da sua mão.", "CARD_NOT_OWNED_BY_PLAYER");
     loseCardByIndex(state, target.id, index, "marcelo-penalty");
+  } else if (pending.type === "robertinho-swap") {
+    const ownIndex = actor.hand.findIndex(({ instanceId }) => instanceId === choice.ownInstanceId);
+    if (ownIndex === -1) throw new GameRuleError("Escolha uma carta da sua mão.", "CARD_NOT_OWNED_BY_PLAYER");
+    const target = getActivePlayer(state, pending.targetPlayerId);
+    const targetIndex = target.hand.findIndex(({ instanceId }) => instanceId === pending.targetCardInstanceId);
+    if (targetIndex === -1) throw new GameRuleError("A carta usada não está mais com o alvo.", "TARGET_CARD_NO_LONGER_AVAILABLE");
+    const [ownCard] = actor.hand.splice(ownIndex, 1);
+    const [claimedCard] = target.hand.splice(targetIndex, 1);
+    actor.hand.push(claimedCard);
+    state.deck.returnAndShuffle([ownCard]);
+    target.hand.push(...state.deck.draw(1));
+    record(state, { type: "robertinho-swapped", playerId: actor.id, targetPlayerId: target.id });
   }
   state.pendingEffectChoice = null;
-  return { finishTurn: ["sandra", "altimar"].includes(pending.type) };
+  return {
+    finishTurn: ["sandra", "altimar", "robertinho-swap"].includes(pending.type)
+      && !pending.resumeCurrentTurnAfterChoice,
+  };
 }
 
 function processScheduledEffects(state, playerId) {
@@ -332,6 +407,14 @@ function processScheduledEffects(state, playerId) {
     if (effect.nextCheckAtStartOfPlayerId !== playerId) continue;
     if (effect.type === "rodrigo-debt") processRodrigoDebt(state, effect);
     if (effect.type === "marcelo-requirement") processMarceloRequirement(state, effect);
+    if (effect.type === "ze-delayed-action") {
+      removeEffect(state, effect.id);
+      const completed = executeCharacterEffect(state, effect.actionClaim) !== false;
+      if (!completed && state.pendingEffectChoice) {
+        state.pendingEffectChoice.resumeCurrentTurnAfterChoice = true;
+      }
+      record(state, { type: "ze-delayed-action-executed", playerId: effect.sourcePlayerId, targetPlayerId: effect.targetPlayerId });
+    }
   }
 }
 

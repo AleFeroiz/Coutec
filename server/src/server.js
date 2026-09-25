@@ -40,6 +40,7 @@ function createCoutecServer({
 }
 
 function registerSocket(socket, io, roomStore) {
+  const scheduledReactions = registerSocket.scheduledReactions ??= new Set();
   socket.on("room:create", (payload, reply) => {
     handle(reply, () => {
       const { room, playerId } = roomStore.create({
@@ -117,6 +118,48 @@ function registerSocket(socket, io, roomStore) {
     });
   });
 
+  socket.on("andreia:respond", (payload, reply) => {
+    handle(reply, () => {
+      const room = roomStore.respondAndreia(socket.id, Boolean(payload?.use));
+      emitRoom(room);
+      if (room.game.pendingClaim) scheduleClaim(room);
+      return {};
+    });
+  });
+
+  socket.on("andreia:coup", (payload, reply) => {
+    handle(reply, () => {
+      const room = roomStore.andreiaCoup(socket.id, payload ?? {});
+      emitRoom(room);
+      return {};
+    });
+  });
+
+  socket.on("wave:collect", (_payload, reply) => {
+    handle(reply, () => {
+      const room = roomStore.waveCollect(socket.id);
+      emitRoom(room);
+      return {};
+    });
+  });
+
+  socket.on("wave:coup", (payload, reply) => {
+    handle(reply, () => {
+      const room = roomStore.waveCoup(socket.id, payload ?? {});
+      emitRoom(room);
+      return {};
+    });
+  });
+
+  socket.on("wave:character", (payload, reply) => {
+    handle(reply, () => {
+      const room = roomStore.waveCharacter(socket.id, payload ?? {});
+      emitRoom(room);
+      scheduleClaim(room);
+      return {};
+    });
+  });
+
   socket.on("challenge:contest", (_payload, reply) => {
     handle(reply, () => {
       const room = roomStore.challenge(socket.id);
@@ -141,6 +184,23 @@ function registerSocket(socket, io, roomStore) {
     });
   });
 
+  socket.on("reaction:claim", (_payload, reply) => {
+    handle(reply, () => {
+      const room = roomStore.claimReaction(socket.id);
+      emitRoom(room);
+      scheduleClaim(room);
+      return {};
+    });
+  });
+
+  socket.on("reaction:pass", (_payload, reply) => {
+    handle(reply, () => {
+      const room = roomStore.passReaction(socket.id);
+      emitRoom(room);
+      return {};
+    });
+  });
+
   socket.on("effect:choose", (payload, reply) => {
     handle(reply, () => {
       const room = roomStore.chooseEffect(socket.id, payload ?? {});
@@ -159,6 +219,30 @@ function registerSocket(socket, io, roomStore) {
         serializeRoomForPlayer(room, membership.playerId),
       );
     }
+    scheduleReaction(room);
+  }
+
+  function scheduleReaction(room) {
+    const reaction = room.game?.pendingReaction;
+    if (!reaction) return;
+    const key = `${room.id}:${reaction.expiresAt}`;
+    if (scheduledReactions.has(key)) return;
+    scheduledReactions.add(key);
+    const timer = setTimeout(() => {
+      scheduledReactions.delete(key);
+      const changedRoom = roomStore.expireReaction(room.id, reaction.expiresAt);
+      if (changedRoom) emitRoom(changedRoom);
+    }, Math.max(0, reaction.expiresAt - Date.now()));
+    timer.unref?.();
+  }
+
+  function scheduleClaim(room) {
+    const claimId = room.game.pendingClaim.id;
+    const challengeTimer = setTimeout(() => {
+      const changedRoom = roomStore.expireClaim(room.id, claimId);
+      if (changedRoom) emitRoom(changedRoom);
+    }, room.config.challengeSeconds * 1000);
+    challengeTimer.unref?.();
   }
 }
 

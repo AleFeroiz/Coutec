@@ -54,6 +54,9 @@ function serializeRoomForPlayer(room, playerId) {
       pendingClaim: room.game.pendingClaim
         ? { ...room.game.pendingClaim }
         : null,
+      pendingReaction: room.game.pendingReaction
+        ? { ...room.game.pendingReaction, actionClaim: undefined }
+        : null,
       activeEffects: room.game.activeEffects.map((effect) => ({ ...effect })),
       pendingEffectChoice: room.game.pendingEffectChoice
         ? { ...room.game.pendingEffectChoice }
@@ -74,6 +77,8 @@ function getChoicePlayerId(pending) {
   if (!pending) return null;
   return pending.type === "marcelo-loss"
     ? pending.targetPlayerId
+    : pending.type === "wave-action"
+      ? pending.targetPlayerId
     : pending.actorPlayerId;
 }
 

@@ -14,12 +14,11 @@ let lastAnimatedEvent = 0;
 const byId = (id) => document.getElementById(id);
 
 const configuredOnlineUrl = window.COUTEC_CONFIG?.onlineServerUrl ?? "";
-byId("server-url").value = localStorage.getItem("coutecOnlineServerUrl") || configuredOnlineUrl;
 byId("offline-connect-button").addEventListener("click", () =>
   connect("http://localhost:3000", "local"),
 );
 byId("online-connect-button").addEventListener("click", () =>
-  connect(byId("server-url").value, "online"),
+  connect(configuredOnlineUrl, "online"),
 );
 byId("create-form").addEventListener("submit", createRoom);
 byId("join-form").addEventListener("submit", joinRoom);
@@ -41,6 +40,8 @@ byId("challenge-button").addEventListener("click", () =>
 byId("resolve-claim-button").addEventListener("click", () =>
   emit("challenge:pass", {}),
 );
+byId("reaction-claim-button").addEventListener("click", () => emit("reaction:claim", {}));
+byId("reaction-pass-button").addEventListener("click", () => emit("reaction:pass", {}));
 byId("pool-button").addEventListener("click", () => byId("pool-dialog").showModal());
 byId("close-pool").addEventListener("click", () => byId("pool-dialog").close());
 byId("coup-button").addEventListener("click", () =>
@@ -56,8 +57,7 @@ byId("copy-code").addEventListener("click", async () => {
 
 async function connect(rawServerUrl, mode) {
   const serverUrl = rawServerUrl.trim().replace(/\/$/, "");
-  if (!serverUrl) return showError("Informe a URL do servidor online.");
-  if (mode === "online") localStorage.setItem("coutecOnlineServerUrl", serverUrl);
+  if (!serverUrl) return showError("O servidor online ainda não foi configurado.");
   byId("connection-status").textContent = mode === "local"
     ? "Conectando ao servidor local…"
     : "Conectando ao servidor online…";
@@ -226,14 +226,16 @@ function renderOpponents(game) {
 
 function renderControls(game, self, isOwnTurn) {
   const claim = game.pendingClaim;
+  const reaction = game.pendingReaction;
   const normal = byId("normal-actions");
   const challenge = byId("challenge-actions");
   const loss = byId("loss-actions");
   const effectChoice = game.pendingEffectChoice;
-  normal.hidden = Boolean(claim || effectChoice);
+  normal.hidden = Boolean(claim || reaction || effectChoice);
   challenge.hidden = !claim || claim.stage !== "challenge-window";
   loss.hidden = !claim || claim.stage !== "loss-selection" || claim.loserPlayerId !== room.selfPlayerId;
   byId("effect-choice-actions").hidden = !effectChoice;
+  byId("reaction-actions").hidden = !reaction;
 
   const targets = game.players.filter((player) => player.id !== room.selfPlayerId && !player.eliminated);
   const characterDetails = Array.isArray(game.characters)
@@ -251,6 +253,19 @@ function renderControls(game, self, isOwnTurn) {
   byId("coup-button").disabled = !isOwnTurn || self.eliminated || self.coins < 7 || !targets.length;
 
   if (!claim) {
+    if (reaction) {
+      const eligible = reaction.eligiblePlayerIds.includes(room.selfPlayerId);
+      const passed = reaction.passedPlayerIds.includes(room.selfPlayerId);
+      byId("action-title").textContent = "Janela de reação";
+      byId("reaction-description").textContent = reaction.type === "ze"
+        ? "Alguém vai alegar Zé para atrasar esta habilidade?"
+        : "Alguém vai alegar Robertinho depois desta habilidade?";
+      byId("reaction-claim-button").textContent = `Alegar ${characterName(reaction.type)}`;
+      byId("reaction-claim-button").hidden = !eligible || passed;
+      byId("reaction-pass-button").hidden = !eligible || passed;
+      byId("reaction-timer").textContent = `${Math.max(0, (reaction.expiresAt - Date.now()) / 1000).toFixed(1)}s`;
+      return;
+    }
     if (effectChoice) {
       renderEffectChoice(game, effectChoice);
       return;
@@ -305,6 +320,9 @@ function renderCharacterParameters() {
   } else if (characterId === "marcelo-moreira") {
     const options = activePlayers.filter(({ id }) => id !== room.selfPlayerId).map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("");
     container.innerHTML = `<div class="action-row"><label>Alvo<select id="effect-target">${options}</select></label><label>Condição<select id="requirement-comparison"><option value="gte">Maior ou igual</option><option value="lte">Menor ou igual</option></select></label></div><label>Número de moedas<input id="requirement-threshold" type="number" min="1" max="8" value="4"></label>`;
+  } else if (characterId === "wave") {
+    const options = activePlayers.filter(({ id }) => id !== room.selfPlayerId).map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("");
+    container.innerHTML = `<div class="action-row"><label>Jogador obrigado<select id="effect-target">${options}</select></label><label>Ação<select id="wave-action"><option value="collect">Coletar 1 moeda</option><option value="character">Usar uma carta</option><option value="coup">Dar Golpe</option></select></label></div>`;
   } else {
     container.innerHTML = "";
   }
@@ -317,6 +335,7 @@ function readCharacterParameters() {
   if (characterId === "luis-sapeca") return { targetPlayerIds: [byId("swap-target-one").value, byId("swap-target-two").value] };
   if (characterId === "rodrigo") return { targetPlayerId: byId("effect-target").value };
   if (characterId === "marcelo-moreira") return { targetPlayerId: byId("effect-target").value, comparison: byId("requirement-comparison").value, threshold: Number(byId("requirement-threshold").value) };
+  if (characterId === "wave") return { targetPlayerId: byId("effect-target").value, forcedAction: byId("wave-action").value };
   return {};
 }
 
@@ -331,7 +350,9 @@ function updateClaimButton() {
 function renderEffectChoice(game, pending) {
   byId("action-title").textContent = "Complete a habilidade";
   const container = byId("effect-choice-actions");
-  const choicePlayerId = pending.type === "marcelo-loss" ? pending.targetPlayerId : pending.actorPlayerId;
+  const choicePlayerId = ["marcelo-loss", "wave-action"].includes(pending.type)
+    ? pending.targetPlayerId
+    : pending.actorPlayerId;
   if (choicePlayerId !== room.selfPlayerId) {
     byId("action-prompt").textContent = "Aguardando o jogador consultar o baralho.";
     container.innerHTML = "";
@@ -341,7 +362,22 @@ function renderEffectChoice(game, pending) {
   const deckOptions = (game.effectChoiceOptions?.deckCards ?? []).map((card) =>
     `<option value="${card.instanceId}">${characterName(card.characterId)}</option>`,
   ).join("");
-  if (pending.type === "sandra") {
+  if (pending.type === "andreia-offer") {
+    byId("action-prompt").textContent = "O Golpe acertou. Você quer alegar Andreia para continuar?";
+    container.innerHTML = `<div class="action-row"><button id="andreia-use">Alegar Andreia</button><button id="andreia-skip" class="secondary">Encerrar turno</button></div>`;
+    byId("andreia-use").addEventListener("click", () => emit("andreia:respond", { use: true }));
+    byId("andreia-skip").addEventListener("click", () => emit("andreia:respond", { use: false }));
+    return;
+  } else if (pending.type === "andreia-coup") {
+    const targets = game.players.filter(({ eliminated, id }) => !eliminated && id !== room.selfPlayerId);
+    container.innerHTML = `<p>Andreia liberou um Golpe gratuito.</p><div class="coup-controls"><label>Alvo<select id="choice-target">${targets.map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("")}</select></label><label>Palpite<select id="choice-character"></select></label><button id="complete-effect" class="danger">Golpe grátis</button></div>`;
+    fillCharacterSelect(byId("choice-character"), game.characterPool);
+    byId("complete-effect").addEventListener("click", () => emit("andreia:coup", { targetPlayerId: byId("choice-target").value, guessedCharacterId: byId("choice-character").value }));
+    return;
+  } else if (pending.type === "wave-action") {
+    renderForcedWaveAction(game, pending, container);
+    return;
+  } else if (pending.type === "sandra") {
     container.innerHTML = `<label>Sua carta<select id="choice-own-card">${game.ownHand.map((card, index) => `<option value="${card.instanceId}">Carta ${index + 1} — ${characterName(card.characterId)}</option>`).join("")}</select></label><label>Nova carta do baralho<select id="choice-deck-card">${deckOptions}</select></label><button id="complete-effect">Trocar carta</button>`;
   } else if (pending.type === "altimar") {
     const targets = game.players.filter(({ eliminated }) => !eliminated);
@@ -355,6 +391,12 @@ function renderEffectChoice(game, pending) {
   } else if (pending.type === "rodrigo-loss") {
     const target = game.players.find(({ id }) => id === pending.targetPlayerId);
     container.innerHTML = `<p>${escapeHtml(target.name)} não pagou a dívida. Escolha uma carta escondida:</p><label>Posição<select id="choice-target-index">${Array.from({ length: target.handSize }, (_, index) => `<option value="${index}">Carta ${index + 1}</option>`).join("")}</select></label><button id="complete-effect">Rasgar carta</button>`;
+  } else if (pending.type === "robertinho-swap") {
+    container.innerHTML = `<p>Escolha uma carta sua para trocar pela carta usada pelo alvo:</p><div class="loss-card-buttons">${game.ownHand.map((card) => `<button data-robertinho-card="${card.instanceId}">${characterName(card.characterId)}</button>`).join("")}</div>`;
+    for (const button of container.querySelectorAll("[data-robertinho-card]")) {
+      button.addEventListener("click", () => emit("effect:choose", { ownInstanceId: button.dataset.robertinhoCard }));
+    }
+    return;
   } else {
     container.innerHTML = `<p>Você não possui 2 moedas. Escolha uma influência para perder:</p><div class="loss-card-buttons">${game.ownHand.map((card) => `<button data-own-instance="${card.instanceId}">${characterName(card.characterId)}</button>`).join("")}</div>`;
     for (const button of container.querySelectorAll("[data-own-instance]")) {
@@ -372,6 +414,42 @@ function renderEffectChoice(game, pending) {
       payload.targetCardIndex = Number(byId("choice-target-index").value);
     }
     emit("effect:choose", payload);
+  });
+}
+
+function renderForcedWaveAction(game, pending, container) {
+  const allowedTargets = game.players.filter(({ eliminated, id }) => !eliminated && id !== room.selfPlayerId && id !== pending.actorPlayerId);
+  if (pending.forcedAction === "collect") {
+    container.innerHTML = `<p>O Wave obrigou você a coletar uma moeda.</p><button id="wave-complete">Coletar moeda</button>`;
+    byId("wave-complete").addEventListener("click", () => emit("wave:collect", {}));
+    return;
+  }
+  if (pending.forcedAction === "coup") {
+    container.innerHTML = `<p>O Wave obrigou você a dar um Golpe. O usuário do Wave não pode ser o alvo.</p><div class="coup-controls"><label>Alvo<select id="choice-target">${allowedTargets.map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("")}</select></label><label>Palpite<select id="choice-character"></select></label><button id="wave-complete" class="danger">Dar Golpe</button></div>`;
+    fillCharacterSelect(byId("choice-character"), game.characterPool);
+    byId("wave-complete").addEventListener("click", () => emit("wave:coup", { targetPlayerId: byId("choice-target").value, guessedCharacterId: byId("choice-character").value }));
+    return;
+  }
+  const choices = game.characters.filter(({ id, implemented }) => implemented && id !== "andreia");
+  container.innerHTML = `<p>O Wave obrigou você a usar uma carta. O usuário do Wave não pode ser escolhido.</p><label>Personagem<select id="forced-character">${choices.map((character) => `<option value="${character.id}">${escapeHtml(character.name)}</option>`).join("")}</select></label><div id="forced-parameters"></div><button id="wave-complete">Alegar habilidade</button>`;
+  const renderParameters = () => {
+    const id = byId("forced-character").value;
+    const targetOptions = allowedTargets.map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("");
+    if (["jeff-dino", "rodrigo", "marcelo-moreira"].includes(id)) byId("forced-parameters").innerHTML = `<label>Alvo<select id="forced-target">${targetOptions}</select></label>${id === "marcelo-moreira" ? '<label>Condição<select id="forced-comparison"><option value="gte">Maior ou igual</option><option value="lte">Menor ou igual</option></select></label><label>Número<input id="forced-threshold" type="number" min="1" max="8" value="4"></label>' : ""}`;
+    else if (id === "deivison") byId("forced-parameters").innerHTML = '<label>Operação<select id="forced-mode"><option value="deposit">Guardar</option><option value="withdraw">Retirar</option></select></label><label>Quantidade<input id="forced-amount" type="number" min="1" value="1"></label>';
+    else if (id === "luis-sapeca") byId("forced-parameters").innerHTML = `<label>Primeiro alvo<select id="forced-target-one">${targetOptions}</select></label><label>Segundo alvo<select id="forced-target-two">${targetOptions}</select></label>`;
+    else byId("forced-parameters").innerHTML = "";
+  };
+  byId("forced-character").addEventListener("change", renderParameters);
+  renderParameters();
+  byId("wave-complete").addEventListener("click", () => {
+    const id = byId("forced-character").value;
+    let parameters = {};
+    if (["jeff-dino", "rodrigo"].includes(id)) parameters = { targetPlayerId: byId("forced-target").value };
+    if (id === "marcelo-moreira") parameters = { targetPlayerId: byId("forced-target").value, comparison: byId("forced-comparison").value, threshold: Number(byId("forced-threshold").value) };
+    if (id === "deivison") parameters = { mode: byId("forced-mode").value, amount: Number(byId("forced-amount").value) };
+    if (id === "luis-sapeca") parameters = { targetPlayerIds: [byId("forced-target-one").value, byId("forced-target-two").value] };
+    emit("wave:character", { characterId: id, parameters });
   });
 }
 
@@ -409,9 +487,15 @@ function effectBadges(game, player) {
 
 function updateChallengeTimer() {
   const claim = room?.game?.pendingClaim;
-  if (!claim || claim.stage !== "challenge-window") return;
-  const remaining = Math.max(0, (claim.expiresAt - Date.now()) / 1000);
-  byId("challenge-timer").textContent = `${remaining.toFixed(1)}s`;
+  if (claim?.stage === "challenge-window") {
+    const remaining = Math.max(0, (claim.expiresAt - Date.now()) / 1000);
+    byId("challenge-timer").textContent = `${remaining.toFixed(1)}s`;
+  }
+  const reaction = room?.game?.pendingReaction;
+  if (reaction) {
+    const remaining = Math.max(0, (reaction.expiresAt - Date.now()) / 1000);
+    byId("reaction-timer").textContent = `${remaining.toFixed(1)}s`;
+  }
 }
 
 function costLabel(cost) {
@@ -475,7 +559,7 @@ function fillCharacterSelect(select, ids) {
 }
 function fillClaimCharacterSelect(select, characters) {
   const previous = select.value;
-  select.innerHTML = characters.map((character) =>
+  select.innerHTML = characters.filter(({ id }) => id !== "andreia").map((character) =>
     `<option value="${character.id}" ${character.implemented ? "" : "disabled"}>${escapeHtml(character.name)}${character.implemented ? "" : " — em desenvolvimento"}</option>`,
   ).join("");
   const previousOption = [...select.options].find(({ value }) => value === previous);

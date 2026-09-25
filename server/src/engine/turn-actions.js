@@ -30,9 +30,27 @@ function collectCoin(state, playerId) {
   return { amount: gain.received, eatenByDinosaur: gain.eaten, coins: player.coins };
 }
 
-function performCoup(state, { playerId, targetPlayerId, guessedCharacterId }) {
-  const player = requireCurrentPlayer(state, playerId);
-  requireNoPendingClaim(state);
+function performCoup(state, { playerId, targetPlayerId, guessedCharacterId, freeAndreia = false, forcedByWave = false }) {
+  let forbiddenTargetPlayerId = null;
+  if (freeAndreia) {
+    const pending = state.pendingEffectChoice;
+    if (!pending || pending.type !== "andreia-coup" || pending.actorPlayerId !== playerId) {
+      throw new GameRuleError("Não há Golpe adicional disponível.", "NO_FREE_COUP_AVAILABLE");
+    }
+    state.pendingEffectChoice = null;
+  } else if (forcedByWave) {
+    const pending = state.pendingEffectChoice;
+    if (!pending || pending.type !== "wave-action" || pending.targetPlayerId !== playerId || pending.forcedAction !== "coup") {
+      throw new GameRuleError("Este jogador não foi obrigado a dar um Golpe.", "NO_FORCED_COUP");
+    }
+    forbiddenTargetPlayerId = pending.actorPlayerId;
+    state.pendingEffectChoice = null;
+  } else {
+    requireCurrentPlayer(state, playerId);
+    requireNoPendingClaim(state);
+  }
+  const player = state.players.find(({ id, eliminated }) => id === playerId && !eliminated);
+  if (!player) throw new GameRuleError("O jogador não está ativo.", "PLAYER_NOT_ACTIVE");
   const target = state.players.find(({ id }) => id === targetPlayerId);
 
   if (!target || target.eliminated) {
@@ -44,20 +62,23 @@ function performCoup(state, { playerId, targetPlayerId, guessedCharacterId }) {
       "SELF_TARGETED_COUP",
     );
   }
+  if (target.id === forbiddenTargetPlayerId) {
+    throw new GameRuleError("O alvo forçado não pode escolher o usuário do Wave.", "WAVE_USER_CANNOT_BE_TARGETED");
+  }
   if (!state.characterPool.includes(guessedCharacterId)) {
     throw new GameRuleError(
       "O palpite deve ser um personagem presente no pool da partida.",
       "CHARACTER_OUTSIDE_POOL",
     );
   }
-  if (player.coins < GAME_RULES.coupCost) {
+  if (!freeAndreia && player.coins < GAME_RULES.coupCost) {
     throw new GameRuleError(
       `O Golpe custa ${GAME_RULES.coupCost} moedas.`,
       "NOT_ENOUGH_COINS_FOR_COUP",
     );
   }
 
-  player.coins -= GAME_RULES.coupCost;
+  if (!freeAndreia) player.coins -= GAME_RULES.coupCost;
   const matchingCard = target.hand.find(
     ({ characterId }) => characterId === guessedCharacterId,
   );
@@ -96,8 +117,29 @@ function performCoup(state, { playerId, targetPlayerId, guessedCharacterId }) {
   });
   assertCardIntegrity(state);
 
-  if (!finishGameIfThereIsAWinner(state)) finishTurn(state);
+  if (!finishGameIfThereIsAWinner(state)) {
+    if (result.hit && state.characterPool.includes("andreia")) {
+      state.pendingEffectChoice = { type: "andreia-offer", actorPlayerId: playerId };
+      recordEvent(state, { type: "andreia-offered", playerId });
+    } else {
+      finishTurn(state);
+    }
+  }
   return result;
+}
+
+function collectCoinForcedByWave(state, playerId) {
+  const pending = state.pendingEffectChoice;
+  if (!pending || pending.type !== "wave-action" || pending.targetPlayerId !== playerId || pending.forcedAction !== "collect") {
+    throw new GameRuleError("Este jogador não foi obrigado a coletar.", "NO_FORCED_COLLECTION");
+  }
+  state.pendingEffectChoice = null;
+  const player = state.players.find(({ id, eliminated }) => id === playerId && !eliminated);
+  if (!player) throw new GameRuleError("O jogador não está ativo.", "PLAYER_NOT_ACTIVE");
+  const gain = grantCoins(state, player, GAME_RULES.collectCoinsAmount, "wave-forced-collect");
+  recordEvent(state, { type: "wave-collection-completed", playerId, sourcePlayerId: pending.actorPlayerId, amount: gain.received });
+  finishTurn(state);
+  return gain;
 }
 
 function loseInfluence(state, { playerId, instanceId, reason }) {
@@ -155,7 +197,7 @@ function requireCoupIsNotMandatory(player) {
 }
 
 function requireNoPendingClaim(state) {
-  if (state.pendingClaim || state.pendingEffectChoice) {
+  if (state.pendingClaim || state.pendingReaction || state.pendingEffectChoice) {
     throw new GameRuleError(
       "Resolva a alegação pendente antes de fazer outra ação.",
       "CLAIM_ALREADY_PENDING",
@@ -214,6 +256,7 @@ function finishGameIfThereIsAWinner(state) {
 
 module.exports = {
   collectCoin,
+  collectCoinForcedByWave,
   finishGameIfThereIsAWinner,
   finishTurn,
   loseInfluence,

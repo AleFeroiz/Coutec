@@ -23,8 +23,8 @@ Na entrada existem dois modos de conexão:
   jogador. Esse modo não precisa de internet, mas precisa do motor Node local.
 - **Online:** publica-se `/server` na Render e `/client` na Vercel. Cole a URL
   gerada pela Render em `client/config.js`; ela será preenchida automaticamente
-  para todos os jogadores. O campo da tela também permite trocar a URL durante
-  testes e guarda a escolha no navegador.
+  para todos os jogadores. Ao selecionar "Jogar online", a conexão é feita
+  diretamente, sem solicitar endereço ao jogador.
 
 `onlineServerUrl` não é uma senha: é o endereço público que o navegador precisa
 conhecer para abrir a conexão Socket.IO.

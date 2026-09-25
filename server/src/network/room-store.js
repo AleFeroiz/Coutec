@@ -4,14 +4,20 @@ const crypto = require("node:crypto");
 const {
   addPlayer,
   challengeCharacterAction,
+  claimReaction,
   chooseChallengeLoss,
   chooseCharacterEffect,
   collectCoin,
+  collectCoinForcedByWave,
   createRoom,
   declareCharacterAction,
+  declareForcedWaveCharacter,
   performCoup,
   passCharacterChallenge,
+  passReaction,
+  resolveReactionWithoutClaim,
   resolveClaimWithoutChallenge,
+  respondAndreiaOffer,
   startGame,
 } = require("../index");
 const { GameRuleError } = require("../engine/errors");
@@ -83,6 +89,40 @@ class RoomStore {
     return room;
   }
 
+  respondAndreia(socketId, use) {
+    const { room, playerId } = this.getMembership(socketId);
+    respondAndreiaOffer(room.game, { playerId, use });
+    if (room.game.pendingClaim) {
+      room.game.pendingClaim.expiresAt = Date.now() + room.config.challengeSeconds * 1000;
+    }
+    return room;
+  }
+
+  andreiaCoup(socketId, payload) {
+    const { room, playerId } = this.getMembership(socketId);
+    performCoup(room.game, { playerId, targetPlayerId: payload.targetPlayerId, guessedCharacterId: payload.guessedCharacterId, freeAndreia: true });
+    return room;
+  }
+
+  waveCollect(socketId) {
+    const { room, playerId } = this.getMembership(socketId);
+    collectCoinForcedByWave(room.game, playerId);
+    return room;
+  }
+
+  waveCoup(socketId, payload) {
+    const { room, playerId } = this.getMembership(socketId);
+    performCoup(room.game, { playerId, targetPlayerId: payload.targetPlayerId, guessedCharacterId: payload.guessedCharacterId, forcedByWave: true });
+    return room;
+  }
+
+  waveCharacter(socketId, payload) {
+    const { room, playerId } = this.getMembership(socketId);
+    declareForcedWaveCharacter(room.game, { playerId, characterId: payload.characterId, parameters: payload.parameters ?? {} });
+    room.game.pendingClaim.expiresAt = Date.now() + room.config.challengeSeconds * 1000;
+    return room;
+  }
+
   declareCharacter(socketId, payload) {
     const { room, playerId } = this.getMembership(socketId);
     declareCharacterAction(room.game, {
@@ -113,6 +153,19 @@ class RoomStore {
     return room;
   }
 
+  claimReaction(socketId) {
+    const { room, playerId } = this.getMembership(socketId);
+    claimReaction(room.game, { playerId });
+    room.game.pendingClaim.expiresAt = Date.now() + room.config.challengeSeconds * 1000;
+    return room;
+  }
+
+  passReaction(socketId) {
+    const { room, playerId } = this.getMembership(socketId);
+    passReaction(room.game, { playerId });
+    return room;
+  }
+
   chooseEffect(socketId, payload) {
     const { room, playerId } = this.getMembership(socketId);
     chooseCharacterEffect(room.game, { playerId, choice: payload });
@@ -126,6 +179,14 @@ class RoomStore {
       return null;
     }
     resolveClaimWithoutChallenge(room.game);
+    return room;
+  }
+
+  expireReaction(roomId, expiresAt) {
+    const room = this.rooms.get(roomId);
+    const reaction = room?.game?.pendingReaction;
+    if (!reaction || reaction.expiresAt !== expiresAt) return null;
+    resolveReactionWithoutClaim(room.game);
     return room;
   }
 

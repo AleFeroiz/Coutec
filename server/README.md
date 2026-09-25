@@ -43,18 +43,15 @@ Implementado:
 - verificação de integridade do total de cartas;
 - salas multiplayer em memória via Socket.IO;
 - estado privado por jogador, sem enviar mãos adversárias;
-- cliente mínimo para playtests locais.
+- cliente mínimo para playtests locais e online;
 - janela de desafio configurável (padrão de 5 segundos), com votos antecipados;
 - cobrança da habilidade no momento do anúncio;
-- Jeff Dino, Silvério, Deivison, Paula Granada, Ademar, Sandra, Altimar,
-  Luis Sapeca, Rodrigo e Marcelo Moreira jogáveis;
+- os 14 personagens jogáveis, incluindo as reações de Zé e Robertinho,
+  a sequência gratuita da Andreia e a ação forçada do Wave;
 - expiração de efeitos no começo do próximo turno de quem os criou.
 
 Ainda não implementado:
 
-- efeitos específicos das ações de personagem;
-- efeitos de rodada;
-- reconexão depois de atualizar ou fechar a página;
 - persistência das salas;
 - front-end completo e acabamento visual final.
 
@@ -62,8 +59,8 @@ Ainda não implementado:
 
 - O motor só exige valores inteiros positivos para `poolSize` e
   `copiesPerCharacter`; os limites de balanceamento não foram inventados.
-- As habilidades estão descritas e parametrizadas, mas ainda não são
-  executadas enquanto suas interações pendentes não forem definidas.
+- Os limites de balanceamento continuam configuráveis para serem ajustados
+  durante os playtests.
 
 O fluxo geral de desafio já está implementado: primeiro desafio aceito, prova
 com troca da carta, perda escolhida pelo próprio dono, votos de não desafiar,

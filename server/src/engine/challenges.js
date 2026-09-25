@@ -17,8 +17,13 @@ const {
   requireCurrentPlayer,
 } = require("./turn-actions");
 
-function declareCharacterAction(state, { playerId, characterId, parameters = {} }) {
-  const player = requireCurrentPlayer(state, playerId);
+function declareCharacterAction(state, { playerId, characterId, parameters = {}, allowOutOfTurn = false, allowAndreia = false }) {
+  const player = allowOutOfTurn
+    ? requireActivePlayer(state, playerId)
+    : requireCurrentPlayer(state, playerId);
+  if (characterId === "andreia" && !allowAndreia) {
+    throw new GameRuleError("Andreia só pode ser alegada após um Golpe certeiro.", "ANDREIA_NOT_AVAILABLE");
+  }
   if (characterId !== "paula-granada") requireCoupIsNotMandatory(player);
   requireNoPendingClaim(state);
   const prepared = prepareCharacterAction(state, {
@@ -42,6 +47,49 @@ function declareCharacterAction(state, { playerId, characterId, parameters = {} 
   };
   recordEvent(state, { type: "character-claimed", playerId, characterId });
   return state.pendingClaim;
+}
+
+function respondAndreiaOffer(state, { playerId, use }) {
+  const pending = state.pendingEffectChoice;
+  if (!pending || pending.type !== "andreia-offer" || pending.actorPlayerId !== playerId) {
+    throw new GameRuleError("Não há uma continuação da Andreia disponível.", "NO_ANDREIA_OFFER");
+  }
+  state.pendingEffectChoice = null;
+  if (!use) {
+    finishTurn(state);
+    return { claimed: false };
+  }
+  declareCharacterAction(state, {
+    playerId,
+    characterId: "andreia",
+    allowOutOfTurn: true,
+    allowAndreia: true,
+  });
+  return { claimed: true };
+}
+
+function declareForcedWaveCharacter(state, { playerId, characterId, parameters = {} }) {
+  const pending = state.pendingEffectChoice;
+  if (!pending || pending.type !== "wave-action" || pending.targetPlayerId !== playerId || pending.forcedAction !== "character") {
+    throw new GameRuleError("Este jogador não foi obrigado a usar uma carta.", "NO_FORCED_CHARACTER_ACTION");
+  }
+  if (containsPlayerId(parameters, pending.actorPlayerId)) {
+    throw new GameRuleError("A ação forçada não pode escolher o usuário do Wave.", "WAVE_USER_CANNOT_BE_TARGETED");
+  }
+  state.pendingEffectChoice = null;
+  try {
+    return declareCharacterAction(state, { playerId, characterId, parameters, allowOutOfTurn: true });
+  } catch (error) {
+    state.pendingEffectChoice = pending;
+    throw error;
+  }
+}
+
+function containsPlayerId(value, playerId) {
+  if (value === playerId) return true;
+  if (Array.isArray(value)) return value.some((item) => containsPlayerId(item, playerId));
+  if (value && typeof value === "object") return Object.values(value).some((item) => containsPlayerId(item, playerId));
+  return false;
 }
 
 function challengeCharacterAction(state, { challengerPlayerId }) {
@@ -108,11 +156,7 @@ function chooseChallengeLoss(state, { playerId, instanceId }) {
     ...result,
   });
   state.pendingClaim = null;
-
-  const effectCompleted = claim.claimWasTrue
-    ? executeCharacterEffect(state, claim) !== false
-    : true;
-  if (!finishGameIfThereIsAWinner(state) && effectCompleted) finishTurn(state);
+  if (!finishGameIfThereIsAWinner(state)) continueAfterClaim(state, claim, claim.claimWasTrue);
   return result;
 }
 
@@ -146,8 +190,7 @@ function resolveClaimWithoutChallenge(state) {
     characterId: claim.characterId,
   });
   state.pendingClaim = null;
-  const effectCompleted = executeCharacterEffect(state, claim) !== false;
-  if (effectCompleted) finishTurn(state);
+  continueAfterClaim(state, claim, true);
   return { actionCancelled: false };
 }
 
@@ -155,8 +198,117 @@ function chooseCharacterEffect(state, { playerId, choice }) {
   const result = applyCharacterChoice(state, { playerId, choice });
   assertCardIntegrity(state);
   if (finishGameIfThereIsAWinner(state)) return { completed: true };
-  if (result.finishTurn) finishTurn(state);
+  if (result.finishTurn) {
+    if (state.suspendedEffectChoice) {
+      state.pendingEffectChoice = state.suspendedEffectChoice;
+      state.suspendedEffectChoice = null;
+      return { completed: true };
+    }
+    if (state.postEffectReactionClaim) {
+      const claim = state.postEffectReactionClaim;
+      state.postEffectReactionClaim = null;
+      openReactionOrFinish(state, "robertinho", claim);
+    } else finishTurn(state);
+  }
   return { completed: true };
+}
+
+function claimReaction(state, { playerId }) {
+  const reaction = state.pendingReaction;
+  if (!reaction) throw new GameRuleError("Não há reação aberta.", "NO_REACTION_WINDOW");
+  if (!reaction.eligiblePlayerIds.includes(playerId)) throw new GameRuleError("Você não pode usar esta reação.", "PLAYER_NOT_ELIGIBLE_FOR_REACTION");
+  const characterId = reaction.type;
+  state.pendingReaction = null;
+  try {
+    const claim = declareCharacterAction(state, {
+      playerId,
+      characterId,
+      allowOutOfTurn: true,
+      parameters: {},
+    });
+    claim.kind = "reaction";
+    claim.reactionContext = { type: characterId, actionClaim: reaction.actionClaim };
+    return claim;
+  } catch (error) {
+    state.pendingReaction = reaction;
+    throw error;
+  }
+}
+
+function passReaction(state, { playerId }) {
+  const reaction = state.pendingReaction;
+  if (!reaction || !reaction.eligiblePlayerIds.includes(playerId)) {
+    throw new GameRuleError("Não há reação disponível para você.", "NO_REACTION_WINDOW");
+  }
+  if (!reaction.passedPlayerIds.includes(playerId)) reaction.passedPlayerIds.push(playerId);
+  if (reaction.eligiblePlayerIds.every((id) => reaction.passedPlayerIds.includes(id))) {
+    resolveReactionWithoutClaim(state);
+    return { resolved: true };
+  }
+  return { resolved: false };
+}
+
+function resolveReactionWithoutClaim(state) {
+  const reaction = state.pendingReaction;
+  if (!reaction) return false;
+  state.pendingReaction = null;
+  if (reaction.type === "ze") executeOriginalAction(state, reaction.actionClaim);
+  else finishOrResumeEffect(state);
+  return true;
+}
+
+function continueAfterClaim(state, claim, succeeded) {
+  if (claim.kind === "reaction") {
+    if (succeeded) {
+      const completed = executeCharacterEffect(state, claim) !== false;
+      if (completed) finishOrResumeEffect(state);
+    } else if (claim.reactionContext.type === "ze") executeOriginalAction(state, claim.reactionContext.actionClaim);
+    else finishOrResumeEffect(state);
+    return;
+  }
+  if (!succeeded) return finishTurn(state);
+  openReactionOrFinish(state, "ze", claim);
+}
+
+function openReactionOrFinish(state, type, actionClaim) {
+  const eligiblePlayerIds = state.players
+    .filter(({ id, eliminated, coins }) => !eliminated && id !== actionClaim.actorPlayerId && coins >= 2)
+    .map(({ id }) => id);
+  if (!state.characterPool.includes(type) || !eligiblePlayerIds.length) {
+    if (type === "ze") executeOriginalAction(state, actionClaim);
+    else finishOrResumeEffect(state);
+    return false;
+  }
+  state.pendingReaction = {
+    type,
+    actionClaim,
+    eligiblePlayerIds,
+    passedPlayerIds: [],
+    expiresAt: Date.now() + state.config.challengeSeconds * 1000,
+  };
+  recordEvent(state, { type: "reaction-window-opened", reactionType: type, actorPlayerId: actionClaim.actorPlayerId });
+  return true;
+}
+
+function executeOriginalAction(state, claim) {
+  const completed = executeCharacterEffect(state, claim) !== false;
+  if (completed) openReactionOrFinish(state, "robertinho", claim);
+  else if (["wave-action", "andreia-coup"].includes(state.pendingEffectChoice?.type)) {
+    state.suspendedEffectChoice = state.pendingEffectChoice;
+    state.pendingEffectChoice = null;
+    openReactionOrFinish(state, "robertinho", claim);
+  } else {
+    state.postEffectReactionClaim = claim;
+  }
+}
+
+function finishOrResumeEffect(state) {
+  if (state.suspendedEffectChoice) {
+    state.pendingEffectChoice = state.suspendedEffectChoice;
+    state.suspendedEffectChoice = null;
+  } else {
+    finishTurn(state);
+  }
 }
 
 function replaceRevealedClaimCard(state, player, card) {
@@ -199,9 +351,14 @@ function requireActivePlayer(state, playerId) {
 
 module.exports = {
   challengeCharacterAction,
+  claimReaction,
   chooseChallengeLoss,
   chooseCharacterEffect,
   declareCharacterAction,
+  declareForcedWaveCharacter,
   passCharacterChallenge,
+  passReaction,
   resolveClaimWithoutChallenge,
+  resolveReactionWithoutClaim,
+  respondAndreiaOffer,
 };
