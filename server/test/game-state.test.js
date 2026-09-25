@@ -5,6 +5,7 @@ const test = require("node:test");
 
 const {
   CHARACTER_CATALOG,
+  IMPLEMENTED_CHARACTERS,
   GameRuleError,
   addPlayer,
   assertCardIntegrity,
@@ -27,6 +28,13 @@ const players = [
 test("o catálogo contém os 14 personagens do documento", () => {
   assert.equal(CHARACTER_CATALOG.length, 14);
   assert.equal(new Set(CHARACTER_CATALOG.map(({ id }) => id)).size, 14);
+});
+
+test("todos os personagens do catálogo possuem implementação no motor", () => {
+  assert.deepEqual(
+    [...IMPLEMENTED_CHARACTERS].sort(),
+    CHARACTER_CATALOG.map(({ id }) => id).sort(),
+  );
 });
 
 test("a configuração padrão preserva o pool e começa com 0 moedas", () => {

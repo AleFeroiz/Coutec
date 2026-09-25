@@ -13,6 +13,7 @@ const {
   declareCharacterAction,
   declareForcedWaveCharacter,
   performCoup,
+  removePlayerFromGame,
   passCharacterChallenge,
   passReaction,
   resolveReactionWithoutClaim,
@@ -63,7 +64,23 @@ class RoomStore {
     if (!room || !room.players.some(({ id }) => id === playerId)) {
       throw new GameRuleError("A sessão dessa sala expirou.", "SESSION_NOT_FOUND");
     }
+    for (const [existingSocketId, membership] of this.memberships) {
+      if (membership.roomId === room.id && membership.playerId === playerId) {
+        this.memberships.delete(existingSocketId);
+      }
+    }
     this.memberships.set(socketId, { roomId: room.id, playerId });
+    room.disconnectedPlayers = (room.disconnectedPlayers ?? []).filter(({ playerId: id }) => id !== playerId);
+    this.refreshPause(room);
+    return { room, playerId };
+  }
+
+  leave(socketId) {
+    const { room, playerId } = this.getMembership(socketId, { allowPaused: true });
+    this.memberships.delete(socketId);
+    room.disconnectedPlayers = (room.disconnectedPlayers ?? []).filter(({ playerId: id }) => id !== playerId);
+    this.removePlayer(room, playerId);
+    this.refreshPause(room);
     return { room, playerId };
   }
 
@@ -174,6 +191,7 @@ class RoomStore {
 
   expireClaim(roomId, claimId) {
     const room = this.rooms.get(roomId);
+    if (room?.connectionPause) return null;
     const claim = room?.game?.pendingClaim;
     if (!claim || claim.id !== claimId || claim.stage !== "challenge-window") {
       return null;
@@ -184,6 +202,7 @@ class RoomStore {
 
   expireReaction(roomId, expiresAt) {
     const room = this.rooms.get(roomId);
+    if (room?.connectionPause) return null;
     const reaction = room?.game?.pendingReaction;
     if (!reaction || reaction.expiresAt !== expiresAt) return null;
     resolveReactionWithoutClaim(room.game);
@@ -191,11 +210,75 @@ class RoomStore {
   }
 
   disconnect(socketId) {
-    // Reconexão persistente será adicionada junto de autenticação/sessões.
+    const membership = this.memberships.get(socketId);
+    if (!membership) return null;
     this.memberships.delete(socketId);
+    const stillConnected = [...this.memberships.values()].some(
+      (candidate) => candidate.roomId === membership.roomId && candidate.playerId === membership.playerId,
+    );
+    const room = this.rooms.get(membership.roomId);
+    if (!room || stillConnected) return null;
+    const player = room.players.find(({ id }) => id === membership.playerId);
+    if (!player) return null;
+    room.pauseStartedAt ??= Date.now();
+    room.disconnectedPlayers ??= [];
+    room.disconnectedPlayers = room.disconnectedPlayers.filter(({ playerId }) => playerId !== player.id);
+    const disconnected = {
+      playerId: player.id,
+      playerName: player.name,
+      startedAt: Date.now(),
+      expiresAt: Date.now() + 30_000,
+    };
+    room.disconnectedPlayers.push(disconnected);
+    this.refreshPause(room);
+    return { room, disconnected };
   }
 
-  getMembership(socketId) {
+  expireDisconnect(roomId, playerId, expiresAt) {
+    const room = this.rooms.get(roomId);
+    const disconnected = room?.disconnectedPlayers?.find((entry) => entry.playerId === playerId && entry.expiresAt === expiresAt);
+    if (!disconnected) return null;
+    room.disconnectedPlayers = room.disconnectedPlayers.filter((entry) => entry !== disconnected);
+    this.removePlayer(room, playerId);
+    this.refreshPause(room);
+    return room;
+  }
+
+  removePlayer(room, playerId) {
+    if (room.game) {
+      const gamePlayer = room.game.players.find(({ id }) => id === playerId);
+      if (gamePlayer) gamePlayer.departed = true;
+      removePlayerFromGame(room.game, playerId);
+    }
+    room.players = room.players.filter(({ id }) => id !== playerId);
+    if (room.hostPlayerId === playerId) room.hostPlayerId = room.players[0]?.id ?? null;
+    for (const [socketId, membership] of this.memberships) {
+      if (membership.roomId === room.id && membership.playerId === playerId) this.memberships.delete(socketId);
+    }
+    if (!room.players.length) this.rooms.delete(room.id);
+  }
+
+  refreshPause(room) {
+    const disconnected = room.disconnectedPlayers ?? [];
+    if (disconnected.length) {
+      const next = [...disconnected].sort((a, b) => a.expiresAt - b.expiresAt)[0];
+      room.connectionPause = {
+        ...next,
+        playerName: disconnected.map(({ playerName }) => playerName).join(", "),
+        disconnectedCount: disconnected.length,
+      };
+      return;
+    }
+    if (room.connectionPause && room.pauseStartedAt) {
+      const pausedFor = Date.now() - room.pauseStartedAt;
+      if (room.game?.pendingClaim?.expiresAt) room.game.pendingClaim.expiresAt += pausedFor;
+      if (room.game?.pendingReaction?.expiresAt) room.game.pendingReaction.expiresAt += pausedFor;
+    }
+    room.connectionPause = null;
+    room.pauseStartedAt = null;
+  }
+
+  getMembership(socketId, { allowPaused = false } = {}) {
     const membership = this.memberships.get(socketId);
     if (!membership) {
       throw new GameRuleError("Você não está em uma sala.", "NOT_IN_ROOM");
@@ -203,6 +286,9 @@ class RoomStore {
     const room = this.rooms.get(membership.roomId);
     if (!room) {
       throw new GameRuleError("Sala não encontrada.", "ROOM_NOT_FOUND");
+    }
+    if (room.connectionPause && !allowPaused) {
+      throw new GameRuleError("A partida está aguardando um jogador reconectar.", "ROOM_PAUSED");
     }
     return { ...membership, room };
   }

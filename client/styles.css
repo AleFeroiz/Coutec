@@ -331,10 +331,16 @@ label small { color:#849087; font-weight:500; line-height:1.35; }
 .cps-collect,.own-seat .card,.quick-actions button { position:relative; pointer-events:auto!important; touch-action:manipulation; -webkit-tap-highlight-color:#e9bd5844; user-select:none; -webkit-user-select:none; }
 .table-center,.own-seat,.quick-actions { pointer-events:auto; }
 .game-table::before,.coin-effects,.deck-stack { pointer-events:none!important; }
+.connection-pause { position:absolute; inset:0; z-index:900; display:grid; place-content:center; justify-items:center; gap:.55rem; padding:1rem; background:#08100cdb; backdrop-filter:blur(7px); color:white; text-align:center; pointer-events:auto; }
+.connection-pause strong { color:#ffe180; font-size:clamp(1.25rem,4vw,2rem); }
+.connection-pause span { max-width:440px; color:#d4ddd4; }
+.connection-pause b { display:grid; width:74px; height:74px; place-items:center; border:4px solid #e1bd45; border-radius:50%; background:#17251d; color:#ffe180; font-size:1.45rem; box-shadow:0 0 24px #e1bd4560; }
 .own-hand-zone { position:relative; display:flex; align-items:center; justify-content:center; gap:.65rem; min-height:178px; }
 .own-hand-zone .cards { flex:0 1 auto; }
 .opponent-hand-zone { display:flex; align-items:center; justify-content:center; gap:.25rem; }
 .player-nameplate { max-width:190px; margin:0 auto .2rem; overflow:hidden; color:#fff; font-size:.82rem; font-weight:900; text-align:center; text-overflow:ellipsis; text-shadow:0 2px 4px #000,0 0 8px #000; white-space:nowrap; }
+.player-tile { padding:.25rem; border-color:transparent; background:transparent; box-shadow:none; }
+.player-tile.current { border-color:transparent; background:#ffe06a0d; box-shadow:none; }
 .player-tile.current .player-nameplate { color:#ffe180; }
 .own-meta { padding:.15rem .5rem; border:0; background:transparent; box-shadow:none; color:white; font-size:.9rem; text-shadow:0 2px 4px #000,0 0 8px #000; }
 .own-hand-zone > .effect-badges { top:4px; right:calc(50% - 120px); z-index:8; }
@@ -349,6 +355,21 @@ label small { color:#849087; font-weight:500; line-height:1.35; }
 .protected-coins strong { z-index:5; }
 .coin-repository { position:absolute; top:-12px; right:-18px; z-index:7; width:max-content; margin:0; font-size:.62rem; }
 .player-tile .coin-pile { flex-basis:40px; width:40px; height:48px; transform:scale(.78); margin-left:-5px; }
+.selectable-target { cursor:pointer; outline:3px solid #ffe06a!important; outline-offset:4px; filter:brightness(1.15); animation:target-ready 1s ease-in-out infinite; touch-action:manipulation; }
+.own-seat.selectable-target { border-radius:24px; background:#ffe06a18; }
+.wizard-step { display:grid; gap:.65rem; padding:.65rem; border:1px solid #70836e; border-radius:12px; background:#18231b; text-align:center; }
+.wizard-step p { margin:0; color:#c5d1c4; }
+.wizard-step label { display:grid; gap:.45rem; }
+.wizard-step input[type="range"] { width:100%; min-height:38px; accent-color:#d7b742; touch-action:pan-x; }
+.wizard-step output { color:#ffe180; font-size:1.25rem; font-weight:900; }
+.wizard-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.5rem; }
+.choice-card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:.5rem; width:100%; max-height:42vh; overflow:auto; padding:.15rem; }
+.choice-card { min-height:72px; padding:.55rem; border:3px solid #e9dfbd; border-radius:10px; background:linear-gradient(145deg,#344d38,#17231b); color:#fff4c5; font-family:Georgia,serif; box-shadow:0 6px 12px #0007; touch-action:manipulation; }
+.choice-card:active { transform:translateY(2px) scale(.97)!important; }
+.card-back-choice { background:linear-gradient(145deg,#17251b,#31583a); color:#f1c94e; }
+.wizard-ready,.wizard-warning { padding:.65rem; border-radius:10px; background:#253b2a; color:#bde6b8; font-weight:800; text-align:center; }
+.wizard-warning { background:#492d27; color:#ffd0c8; }
+@keyframes target-ready { 50% { outline-color:#fff4b0; box-shadow:0 0 24px #ffe06a80; } }
 @keyframes cave-cover-pulse { 50% { filter:brightness(1.3) drop-shadow(0 0 7px #d6c786); transform:scale(1.04); } }
 
 @media (max-width:700px) {
@@ -391,4 +412,24 @@ label small { color:#849087; font-weight:500; line-height:1.35; }
   .own-hand-zone { min-height:98px; height:98px; }
   .own-seat .card { width:74px; height:96px; font-size:.7rem; }
   .quick-actions { bottom:106px; }
+}
+
+/* Chrome Android: fluxo simples, sem planos sobrepostos sobre a mesa. */
+@media (max-width:700px) {
+  .in-game { height:auto; min-height:100dvh; overflow-y:auto; overflow-x:hidden; }
+  .in-game .shell { display:block; height:auto; max-height:none; min-height:100dvh; overflow:visible; }
+  .in-game #game-view { display:block; min-height:0; }
+  .game-hud { position:relative; display:flex; z-index:2; }
+  #pool-button { position:static; min-height:42px; }
+  .hud-actions { padding-right:0; }
+  .game-table { display:flex; flex-direction:column; gap:.45rem; height:auto; min-height:calc(100dvh - 74px); overflow:visible; isolation:auto; }
+  .opponents { position:relative; order:1; z-index:auto; flex:0 0 auto; width:100%; min-height:118px; overflow-x:auto; pointer-events:auto; }
+  .table-center { position:relative; order:2; z-index:auto; flex:0 0 145px; width:100%; min-height:145px; pointer-events:auto; }
+  .quick-actions { position:relative; order:3; right:auto; bottom:auto; z-index:auto; display:flex; flex-direction:row; justify-content:center; width:100%; pointer-events:auto; }
+  .own-seat { position:relative; order:4; z-index:auto; flex:0 0 auto; width:100%; min-height:130px; pointer-events:auto; }
+  .coin-effects { display:none; }
+  .action-drawer { position:fixed; z-index:1000; pointer-events:auto; }
+  .action-drawer.target-picking { top:72px; bottom:auto; max-height:180px; padding-top:.75rem; }
+  .choice-card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); max-height:38dvh; }
+  .player-tile,.player-nameplate,.opponent-hand-zone,.cps-collect,.own-hand-zone,.own-seat .card,#pool-button,.quick-actions button { pointer-events:auto!important; }
 }

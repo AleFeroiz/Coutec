@@ -10,6 +10,7 @@ function serializeRoomForPlayer(room, playerId) {
     hostPlayerId: room.hostPlayerId,
     selfPlayerId: playerId,
     config: room.config,
+    connectionPause: room.connectionPause ? { ...room.connectionPause } : null,
     players: room.players.map((player) => ({ id: player.id, name: player.name })),
   };
 
@@ -36,7 +37,7 @@ function serializeRoomForPlayer(room, playerId) {
       currentPlayerId: currentPlayer?.id ?? null,
       turnNumber: room.game.turnNumber,
       winnerPlayerId: room.game.winnerPlayerId,
-      players: room.game.players.map((player) => ({
+      players: room.game.players.filter(({ departed }) => !departed).map((player) => ({
         id: player.id,
         name: player.name,
         coins: player.coins,

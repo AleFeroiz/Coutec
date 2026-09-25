@@ -254,12 +254,31 @@ function finishGameIfThereIsAWinner(state) {
   return true;
 }
 
+function removePlayerFromGame(state, playerId) {
+  const player = state.players.find(({ id }) => id === playerId);
+  if (!player || player.eliminated) return false;
+  const wasCurrent = state.players[state.currentPlayerIndex]?.id === playerId;
+  const returnedCards = player.hand.splice(0);
+  if (returnedCards.length) state.deck.returnAndShuffle(returnedCards);
+  player.eliminated = true;
+  cancelEffectsFromSource(state, playerId);
+  state.activeEffects = state.activeEffects.filter(({ targetPlayerId }) => targetPlayerId !== playerId);
+  state.pendingClaim = null;
+  state.pendingReaction = null;
+  state.pendingEffectChoice = null;
+  recordEvent(state, { type: "player-left", playerId });
+  assertCardIntegrity(state);
+  if (!finishGameIfThereIsAWinner(state) && wasCurrent) finishTurn(state);
+  return true;
+}
+
 module.exports = {
   collectCoin,
   collectCoinForcedByWave,
   finishGameIfThereIsAWinner,
   finishTurn,
   loseInfluence,
+  removePlayerFromGame,
   performCoup,
   recordEvent,
   recordRevealedCards,

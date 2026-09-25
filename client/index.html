@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>COUTEC — Playtest</title>
-    <link rel="stylesheet" href="./styles.css?v=20260925-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260925-5" />
   </head>
   <body>
     <div id="site-intro" class="site-intro"><div class="intro-building">▥</div><p>Seja bem-vindo à</p><h1>FATEC ITAPETININGA</h1></div>
@@ -65,7 +65,7 @@
       <section id="game-view" hidden>
         <div class="game-hud">
           <div><span class="eyebrow">Sala <b id="game-room-code"></b></span><strong id="turn-text"></strong></div>
-          <div class="hud-actions"><strong id="winner-text"></strong><button id="pool-button" class="secondary">Ver personagens</button></div>
+          <div class="hud-actions"><strong id="winner-text"></strong><button id="pool-button" class="secondary">Ver personagens</button><button id="leave-game-button" class="danger">Sair</button></div>
         </div>
 
         <section class="game-table">
@@ -99,11 +99,7 @@
                   <p id="claim-help" class="prototype-note">Escolha uma habilidade disponível no pool da partida.</p>
                 </div>
                 <div id="coup-panel" hidden>
-                  <div class="coup-controls">
-                  <label>Alvo <select id="coup-target"></select></label>
-                  <label>Palpite <select id="coup-character"></select></label>
-                  <button id="confirm-coup-button" class="danger">Confirmar Golpe</button>
-                  </div>
+                  <div id="coup-wizard"></div>
                 </div>
               </div>
 
@@ -127,6 +123,11 @@
               <div id="effect-choice-actions" hidden></div>
           </section>
           <div id="coin-effects" class="coin-effects" aria-hidden="true"></div>
+          <div id="connection-pause" class="connection-pause" hidden>
+            <strong>Esperando jogador…</strong>
+            <span id="connection-pause-player"></span>
+            <b id="connection-pause-timer">30s</b>
+          </div>
 
           <section class="own-seat">
             <div class="own-meta"><strong>Você</strong></div>
@@ -145,7 +146,7 @@
         <div id="pool-cards" class="pool-cards"></div>
       </dialog>
     </main>
-    <script src="./config.js?v=20260925-1"></script>
-    <script src="./app.js?v=20260925-1"></script>
+    <script src="./config.js?v=20260925-5"></script>
+    <script src="./app.js?v=20260925-6"></script>
   </body>
 </html>

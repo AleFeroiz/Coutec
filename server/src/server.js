@@ -76,6 +76,8 @@ function registerSocket(socket, io, roomStore) {
       });
       socket.join(room.id);
       emitRoom(room);
+      if (room.game?.pendingClaim) scheduleClaim(room);
+      if (room.game?.pendingReaction) scheduleReaction(room);
       return { roomId: room.id, playerId };
     });
   });
@@ -84,6 +86,15 @@ function registerSocket(socket, io, roomStore) {
     handle(reply, () => {
       const room = roomStore.start(socket.id);
       emitRoom(room);
+      return {};
+    });
+  });
+
+  socket.on("room:leave", (_payload, reply) => {
+    handle(reply, () => {
+      const { room } = roomStore.leave(socket.id);
+      socket.leave(room.id);
+      if (roomStore.rooms.has(room.id)) emitRoom(room);
       return {};
     });
   });
@@ -209,7 +220,21 @@ function registerSocket(socket, io, roomStore) {
     });
   });
 
-  socket.on("disconnect", () => roomStore.disconnect(socket.id));
+  socket.on("disconnect", () => {
+    const result = roomStore.disconnect(socket.id);
+    if (!result) return;
+    const { room, disconnected: { playerId, expiresAt } } = result;
+    emitRoom(room);
+    const disconnectTimer = setTimeout(() => {
+      const changedRoom = roomStore.expireDisconnect(room.id, playerId, expiresAt);
+      if (changedRoom && roomStore.rooms.has(changedRoom.id)) {
+        emitRoom(changedRoom);
+        if (!changedRoom.connectionPause && changedRoom.game?.pendingClaim) scheduleClaim(changedRoom);
+        if (!changedRoom.connectionPause && changedRoom.game?.pendingReaction) scheduleReaction(changedRoom);
+      }
+    }, Math.max(0, expiresAt - Date.now()));
+    disconnectTimer.unref?.();
+  });
 
   function emitRoom(room) {
     for (const [socketId, membership] of roomStore.memberships) {
@@ -223,6 +248,7 @@ function registerSocket(socket, io, roomStore) {
   }
 
   function scheduleReaction(room) {
+    if (room.connectionPause) return;
     const reaction = room.game?.pendingReaction;
     if (!reaction) return;
     const key = `${room.id}:${reaction.expiresAt}`;
@@ -237,11 +263,12 @@ function registerSocket(socket, io, roomStore) {
   }
 
   function scheduleClaim(room) {
+    if (room.connectionPause || !room.game.pendingClaim) return;
     const claimId = room.game.pendingClaim.id;
     const challengeTimer = setTimeout(() => {
       const changedRoom = roomStore.expireClaim(room.id, claimId);
       if (changedRoom) emitRoom(changedRoom);
-    }, room.config.challengeSeconds * 1000);
+    }, Math.max(0, room.game.pendingClaim.expiresAt - Date.now()));
     challengeTimer.unref?.();
   }
 }
